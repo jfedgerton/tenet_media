@@ -125,28 +125,20 @@ scm <- function(pan, col, wcol){
   c(m$gap, if (length(rs)) (sum(rs >= m$r) + 1) / (length(rs) + 1) else NA) }
 gtp <- function(m){ ct <- coeftable(m); if ("tp" %in% rownames(ct)) as.numeric(ct["tp", c("Estimate", "Pr(>|t|)")]) else c(NA, NA) }
 
-OUTS <- list(list("Russia positive", "r_pos", P, RUS, "n_ment_r"),
-             list("Combined positive", "c_pos", P, BOTH, "n_ment_r"),
-             list("Combined topic share", "prop_comb", P, ALL, "n_words"),
-             list("JS divergence", "jsd", H, ALL, "n_sentences"))
-EST <- lapply(OUTS, function(o){ mm <- didm(o[[2]], o[[3]], o[[4]])
-  dd <- o[[3]][eval(o[[4]], o[[3]])]
-  list(tw = gtp(mm$full), twm = gtp(mm$matched), sc = scm(dd, o[[2]], o[[5]])) })
 star <- function(p) ifelse(is.na(p), "", ifelse(p < .01, "***", ifelse(p < .05, "**", ifelse(p < .10, "*", ""))))
-fe2  <- function(x) ifelse(is.na(x[1]), "", sprintf("%.3f%s", x[1], star(x[2])))
-fp2  <- function(x) ifelse(is.na(x[2]), "", ifelse(x[2] < .001, "($<$.001)", sprintf("(%.3f)", x[2])))
-spec_rows <- function(lbl, key){
-  est <- vapply(EST, function(e) fe2(e[[key]]), ""); pv <- vapply(EST, function(e) fp2(e[[key]]), "")
-  c(paste0(lbl, " & ", paste(est, collapse = " & "), " \\\\"), paste0(" & ", paste(pv, collapse = " & "), " \\\\[2pt]")) }
-hdr3 <- paste0(" & ", paste(vapply(OUTS, function(o) o[[1]], ""), collapse = " & "), " \\\\")
-tab3 <- c("% requires \\usepackage{booktabs}", "\\begin{table}[!ht]\\centering",
-  "\\caption{Post-payment difference-in-differences across estimators, main outcomes. Cells report the treated$\\times$post effect (TWFE; matched donor set) or the treated-vs-synthetic-control gap (SCM), $p$-values below. TWFE rows include log words and log audience, unit and month fixed effects, SE clustered by unit and month; SCM uses an in-space placebo $p$. Effects are small and lose significance across specifications.}",
-  "\\label{tab:did_main}", "\\small", "\\begin{tabular}{l cccc}", "\\toprule",
-  " & H2 & H2 & H3 & H4 \\\\", hdr3, "\\midrule",
-  spec_rows("TWFE (full)", "tw"), spec_rows("TWFE (matched)", "twm"), spec_rows("Synthetic control", "sc"),
-  "\\bottomrule", "\\multicolumn{5}{l}{\\footnotesize *** $p<.01$, ** $p<.05$, * $p<.10$.} \\\\",
-  "\\end{tabular}", "\\end{table}")
-writeLines(tab3, file.path(SC, "table3_did_all.tex"))
+OUTS <- list(list("r_pos", P, RUS, "n_ment_r"), list("c_pos", P, BOTH, "n_ment_r"),
+             list("prop_comb", P, ALL, "n_words"), list("jsd", H, ALL, "n_sentences"))
+m3 <- list(); scmg <- character(0)                          # 8 feols (4 outcomes x TWFE/Matched) + SCM gaps
+for (o in OUTS){ mm <- didm(o[[1]], o[[2]], o[[3]]); m3 <- c(m3, list(mm$full, mm$matched))
+  sc <- scm(o[[2]][eval(o[[3]], o[[2]])], o[[1]], o[[4]])
+  scmg <- c(scmg, ifelse(is.na(sc[1]), "", sprintf("%.3f%s", sc[1], star(sc[2]))), "") }   # gap under each outcome's first col
+etable(m3, tex = TRUE, file = file.path(SC, "table3_did_all.tex"), replace = TRUE, depvar = FALSE,
+       dict = DICT, fitstat = ~ n + r2, signif.code = SIG, digits = 3, digits.stats = 3,
+       headers = list("^Outcome" = c("Russia positive" = 2, "Combined positive" = 2, "Combined topic share" = 2, "JS divergence" = 2),
+                      "^Specification" = c("TWFE", "Matched", "TWFE", "Matched", "TWFE", "Matched", "TWFE", "Matched")),
+       extralines = list("Synthetic control (gap)" = scmg),
+       title = "Post-payment difference-in-differences across estimators, main outcomes (H2-H4). Treated $\\times$ Post; TWFE and Matched include log words and log audience, unit and month fixed effects, SE clustered by unit and month. The synthetic-control gap (in-space placebo $p$) is reported in the bottom row. Effects are small and lose significance across specifications.",
+       label = "tab:did_main", notes = NOTE)
 
 ###############################################################################
 ## APPENDIX -- full outcome breakdowns (score/pos/net, Ukraine, KL/Cosine) ----
