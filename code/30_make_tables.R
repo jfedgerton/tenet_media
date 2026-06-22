@@ -1,15 +1,14 @@
 ###############################################################################
-# 30_make_tables.R  --  STANDARD manuscript regression tables via fixest::etable.
-#   ROWS    = independent variables (Treatment + controls: log words, log audience)
-#   COLUMNS = model specification (Full sample / Matched) x dependent variable
-#   Coefficients with SE below; FE rows, N, R^2 reported. Stars *** .01 ** .05 * .10.
-#
-# Tables written to data/sc_results/ :
-#   table1_h1_combined.tex  table1_h1_russia.tex   (H1 selection: score/pos/net)
-#   table2_h2_combined.tex  table2_h2_russia.tex   (H2 amplification DiD: score/pos/net)
-#   table3_h3.tex           (H3 agenda: Russia/Ukraine/Combined topic proportion)
-#   table4_h4.tex           (H4 divergence: JSD/KL/Cosine)
-# Seed 123. PI: Jared Edgerton (PSU).
+# 30_make_tables.R  --  manuscript tables (LaTeX) from the panels.
+#   table1_summary.tex   Summary statistics: every IV and DV used in H1-H4.
+#   table2_h1.tex        H1 (selection) across the 4 model specifications
+#                        (Simple | Simple matched | + Controls | + Controls matched).
+#   table3_did_all.tex   Omnibus DiD: H2/H3/H4 headline outcomes in one table
+#                        (add outcome/hypothesis subheaders in the manuscript).
+#   tab_h2_{combined,russia}.tex, tab_h3.tex, tab_h4.tex
+#                        per-hypothesis DiD breakdowns (Full/Matched x outcomes).
+# Standard regression-table style via fixest::etable (rows = variables incl.
+# controls; columns = specification x dependent variable). Seed 123. PI: Jared Edgerton.
 ###############################################################################
 suppressMessages({ library(data.table); library(fixest); library(Matching) })
 set.seed(123)
@@ -37,74 +36,107 @@ H[, tenet := as.integer(unit %in% TRU)]; H[, post := as.integer(month >= TREAT)]
 H <- merge(H, Vunit, by = c("unit", "month"), all.x = TRUE); H[, log_words := log(n_words)]
 H <- merge(H, AM[, .(unit, month, aud_mid)], by = c("unit", "month"), all.x = TRUE); H[, log_aud_m := log(aud_mid)]
 
-## matched donor set (pre-payment audience + words; same Mahalanobis match as 13)
 covs <- P[month < TREAT, .(laud = mean(log_aud_m, na.rm = TRUE), mlogw = mean(log_words, na.rm = TRUE)), by = unit]
 covs[, tenet := as.integer(unit %in% TRU)]; covs <- covs[is.finite(laud) & is.finite(mlogw)]
 mout <- Match(Tr = covs$tenet, X = as.matrix(covs[, .(laud, mlogw)]), M = 3, replace = TRUE, ties = FALSE)
 MU <- unique(c(covs$unit[mout$index.treated], covs$unit[mout$index.control]))
 
-## ---- model fitters (controls spec; full sample + matched) -------------------
-lvl <- function(y, mfilt){                          # H1 pre-payment level | month FE
-  d <- P[month < TREAT & is.finite(get(y)) & is.finite(log_words) & is.finite(log_aud_m)]
-  d <- d[eval(mfilt, d)]
-  f <- as.formula(paste0(y, " ~ tenet + log_words + log_aud_m | mfac"))
-  list(full = feols(f, d, cluster = ~ mfac + unit), matched = feols(f, d[unit %in% MU], cluster = ~ mfac + unit)) }
-did <- function(y, dat, mfilt){                     # H2/H3/H4 DiD | unit + month FE
-  d <- dat[is.finite(get(y)) & is.finite(log_words) & is.finite(log_aud_m)]
-  d <- d[eval(mfilt, d)]
-  f <- as.formula(paste0(y, " ~ tp + log_words + log_aud_m | unit + month"))
-  list(full = feols(f, d, cluster = ~ unit + month), matched = feols(f, d[unit %in% MU], cluster = ~ unit + month)) }
+###############################################################################
+## TABLE 1 -- summary statistics (manual booktabs; N, mean, SD, min, max) ------
+###############################################################################
+f3 <- function(x) ifelse(is.na(x), "", formatC(x, format = "f", digits = 3))
+fN <- function(x) formatC(x, format = "d", big.mark = ",")
+srow <- function(lbl, x){ x <- x[is.finite(x)]
+  paste(lbl, fN(length(x)), f3(mean(x)), f3(sd(x)), f3(min(x)), f3(max(x)), sep = " & ") }
+GRP <- function(g) paste0("\\addlinespace[2pt]\\multicolumn{6}{l}{\\textit{", g, "}} \\\\")
+body1 <- c(
+  GRP("Dependent variables -- Russia/Ukraine stance"),
+  srow("\\quad Russia: score",  P$r_score), srow("\\quad Russia: positive", P$r_pos), srow("\\quad Russia: net", P$r_net),
+  srow("\\quad Ukraine: score", P$u_score), srow("\\quad Ukraine: positive",P$u_pos), srow("\\quad Ukraine: net",P$u_net),
+  srow("\\quad Combined: score",P$c_score), srow("\\quad Combined: positive",P$c_pos), srow("\\quad Combined: net",P$c_net),
+  GRP("Dependent variables -- agenda \\& divergence"),
+  srow("\\quad Russia topic share",  P$prop_rus), srow("\\quad Ukraine topic share", P$prop_ukr), srow("\\quad Combined topic share", P$prop_comb),
+  srow("\\quad Agenda divergence (JSD)", H$jsd), srow("\\quad Agenda divergence (KL)", H$kl_sm), srow("\\quad Agenda divergence (Cosine)", H$cosine),
+  GRP("Independent variables"),
+  srow("\\quad Treated (Tenet)", P$tenet), srow("\\quad Post-payment", P$post),
+  srow("\\quad Log words", P$log_words), srow("\\quad Log audience", P$log_aud_m))
+body1 <- paste0(body1, ifelse(grepl("multicolumn", body1), "", " \\\\"))
+tab1 <- c("% requires \\usepackage{booktabs}", "\\begin{table}[!ht]\\centering",
+  "\\caption{Summary statistics for all dependent and independent variables (show-month observations).}",
+  "\\label{tab:summary}", "\\small", "\\begin{tabular}{l rrrrr}", "\\toprule",
+  "Variable & $N$ & Mean & SD & Min & Max \\\\", "\\midrule", body1, "\\bottomrule", "\\end{tabular}", "\\end{table}")
+writeLines(tab1, file.path(SC, "table1_summary.tex"))
 
+###############################################################################
+## model fitters --------------------------------------------------------------
+###############################################################################
 ALL <- quote(TRUE); RUS <- quote(n_ment_r >= MINMENT); BOTH <- quote(n_ment_r >= MINMENT & n_ment_u >= MINMENT)
-DICT <- c(tenet = "Treated (Tenet)", tp = "Treated $\\times$ Post",
-          log_words = "Log words", log_aud_m = "Log audience")
+DICT <- c(tenet = "Treated (Tenet)", tp = "Treated $\\times$ Post", log_words = "Log words",
+          log_aud_m = "Log audience", mfac = "Month", unit = "Unit", month = "Month")
 SIG  <- c("***" = 0.01, "**" = 0.05, "*" = 0.10)
-hdr  <- function(o3) list("^Sample" = c("Full sample" = 3, "Matched" = 3),
-                          "^Outcome" = c(o3, o3))
+NOTE <- "Coefficients with clustered SE below. *** p<.01, ** p<.05, * p<.10."
+etx  <- function(models, headers, title, lab, file)
+  etable(models, tex = TRUE, file = file.path(SC, file), replace = TRUE, depvar = FALSE,
+         dict = DICT, headers = headers, fitstat = ~ n + r2, signif.code = SIG,
+         digits = 3, digits.stats = 3, title = title, label = lab, notes = NOTE)
 
-write_tab <- function(models, headers, title, lab, file) {
-  etable(models, tex = TRUE, file = file.path(SC, file), replace = TRUE,
-         dict = DICT, headers = headers, fitstat = ~ n + r2,
-         signif.code = SIG, digits = 3, digits.stats = 3,
-         title = title, label = lab,
-         notes = "Coefficients with clustered SE below. *** p<.01, ** p<.05, * p<.10.") }
+h1specs <- function(y, mfilt){                       # H1: 4 specs for one outcome
+  d <- P[month < TREAT & is.finite(get(y)) & is.finite(log_words) & is.finite(log_aud_m)]; d <- d[eval(mfilt, d)]
+  dm <- d[unit %in% MU]; fs <- paste0(y, " ~ tenet | mfac"); fc <- paste0(y, " ~ tenet + log_words + log_aud_m | mfac")
+  list(feols(as.formula(fs), d, cluster = ~ mfac + unit), feols(as.formula(fs), dm, cluster = ~ mfac + unit),
+       feols(as.formula(fc), d, cluster = ~ mfac + unit), feols(as.formula(fc), dm, cluster = ~ mfac + unit)) }
+lvlm <- function(y, mfilt){                          # H1 level, controls spec, full + matched
+  d <- P[month < TREAT & is.finite(get(y)) & is.finite(log_words) & is.finite(log_aud_m)]; d <- d[eval(mfilt, d)]
+  f <- paste0(y, " ~ tenet + log_words + log_aud_m | mfac")
+  list(full = feols(as.formula(f), d, cluster = ~ mfac + unit), matched = feols(as.formula(f), d[unit %in% MU], cluster = ~ mfac + unit)) }
+didm <- function(y, dat, mfilt){                     # DiD controls spec, full + matched
+  d <- dat[is.finite(get(y)) & is.finite(log_words) & is.finite(log_aud_m)]; d <- d[eval(mfilt, d)]
+  f <- paste0(y, " ~ tp + log_words + log_aud_m | unit + month")
+  list(full = feols(as.formula(f), d, cluster = ~ unit + month), matched = feols(as.formula(f), d[unit %in% MU], cluster = ~ unit + month)) }
+didf <- function(y, dat, mfilt) didm(y, dat, mfilt)$full
 
-## ---- TABLE 1: H1 selection (score / pos / net) ------------------------------
-m1c <- list(lvl("c_score",BOTH)$full, lvl("c_pos",BOTH)$full, lvl("c_net",BOTH)$full,
-            lvl("c_score",BOTH)$matched, lvl("c_pos",BOTH)$matched, lvl("c_net",BOTH)$matched)
-write_tab(m1c, hdr(c("Score","Positive","Net")),
-          "H1 (selection): pre-payment level, Combined stance (Russia $-$ Ukraine). Month FE; SE clustered by month and unit.",
-          "tab:h1_combined", "table1_h1_combined.tex")
-m1r <- list(lvl("r_score",RUS)$full, lvl("r_pos",RUS)$full, lvl("r_net",RUS)$full,
-            lvl("r_score",RUS)$matched, lvl("r_pos",RUS)$matched, lvl("r_net",RUS)$matched)
-write_tab(m1r, hdr(c("Score","Positive","Net")),
-          "H1 (selection): pre-payment level, Russia stance. Month FE; SE clustered by month and unit.",
-          "tab:h1_russia", "table1_h1_russia.tex")
+###############################################################################
+## TABLE 2 -- H1 (selection) by model specification. MAIN outcomes only:
+##   Russia positive rate + Combined positive rate, each across the 4 specs.
+###############################################################################
+SP4 <- c("Simple", "Simple (M)", "+ Controls", "+ Controls (M)")
+etx(c(h1specs("r_pos", RUS), h1specs("c_pos", BOTH)),
+    list("^Outcome" = c("Russia positive rate" = 4, "Combined positive rate" = 4),
+         "^Specification" = c(SP4, SP4)),
+    "H1 (selection): pre-payment level on the positive-rate outcomes, across model specifications. Month FE; SE clustered by month and unit.",
+    "tab:h1", "table2_h1.tex")
 
-## ---- TABLE 2: H2 amplification DiD (score / pos / net) ----------------------
-m2c <- list(did("c_score",P,BOTH)$full, did("c_pos",P,BOTH)$full, did("c_net",P,BOTH)$full,
-            did("c_score",P,BOTH)$matched, did("c_pos",P,BOTH)$matched, did("c_net",P,BOTH)$matched)
-write_tab(m2c, hdr(c("Score","Positive","Net")),
-          "H2 (amplification): post-payment DiD, Combined stance. Unit and month FE; SE clustered by unit and month.",
-          "tab:h2_combined", "table2_h2_combined.tex")
-m2r <- list(did("r_score",P,RUS)$full, did("r_pos",P,RUS)$full, did("r_net",P,RUS)$full,
-            did("r_score",P,RUS)$matched, did("r_pos",P,RUS)$matched, did("r_net",P,RUS)$matched)
-write_tab(m2r, hdr(c("Score","Positive","Net")),
-          "H2 (amplification): post-payment DiD, Russia stance. Unit and month FE; SE clustered by unit and month.",
-          "tab:h2_russia", "table2_h2_russia.tex")
+###############################################################################
+## TABLE 3 -- omnibus DiD, MAIN outcomes (controls spec, full sample):
+##   H2 Russia positive, H2 Combined positive, H3 Combined topic share, H4 JSD.
+###############################################################################
+etx(list(didf("r_pos", P, RUS), didf("c_pos", P, BOTH), didf("prop_comb", P, ALL), didf("jsd", H, ALL)),
+    list("^Hypothesis" = c("H2 amplification" = 2, "H3 agenda" = 1, "H4 divergence" = 1),
+         "^Outcome"     = c("Russia positive", "Combined positive", "Combined topic share", "JS divergence")),
+    "Post-payment difference-in-differences, main outcomes. Treated $\\times$ Post; unit and month FE; SE clustered by unit and month.",
+    "tab:did_main", "table3_did_all.tex")
 
-## ---- TABLE 3: H3 agenda topic proportion (Russia / Ukraine / Combined) ------
-m3 <- list(did("prop_rus",P,ALL)$full, did("prop_ukr",P,ALL)$full, did("prop_comb",P,ALL)$full,
-           did("prop_rus",P,ALL)$matched, did("prop_ukr",P,ALL)$matched, did("prop_comb",P,ALL)$matched)
-write_tab(m3, hdr(c("Russia","Ukraine","Combined")),
-          "H3 (agenda): post-payment DiD on topic proportion. Unit and month FE; SE clustered by unit and month.",
-          "tab:h3", "table3_h3.tex")
+###############################################################################
+## APPENDIX -- full outcome breakdowns (score/pos/net, Ukraine, KL/Cosine) ----
+###############################################################################
+hdr6 <- function(o3) list("^Sample" = c("Full sample" = 3, "Matched" = 3), "^Outcome" = c(o3, o3))
+ap_h1c <- list(lvlm("r_score",RUS)$full, lvlm("r_pos",RUS)$full, lvlm("r_net",RUS)$full,
+               lvlm("r_score",RUS)$matched, lvlm("r_pos",RUS)$matched, lvlm("r_net",RUS)$matched)
+etx(ap_h1c, hdr6(c("Score","Positive","Net")), "H1 (appendix): Russia stance, all operationalizations.", "tab:ah1r", "tabA_h1_russia.tex")
+ap_h1cc <- list(lvlm("c_score",BOTH)$full, lvlm("c_pos",BOTH)$full, lvlm("c_net",BOTH)$full,
+                lvlm("c_score",BOTH)$matched, lvlm("c_pos",BOTH)$matched, lvlm("c_net",BOTH)$matched)
+etx(ap_h1cc, hdr6(c("Score","Positive","Net")), "H1 (appendix): Combined stance, all operationalizations.", "tab:ah1c", "tabA_h1_combined.tex")
+m_h2c <- list(didm("c_score",P,BOTH)$full, didm("c_pos",P,BOTH)$full, didm("c_net",P,BOTH)$full,
+              didm("c_score",P,BOTH)$matched, didm("c_pos",P,BOTH)$matched, didm("c_net",P,BOTH)$matched)
+etx(m_h2c, hdr6(c("Score","Positive","Net")), "H2 (appendix): Combined stance DiD.", "tab:ah2c", "tabA_h2_combined.tex")
+m_h2r <- list(didm("r_score",P,RUS)$full, didm("r_pos",P,RUS)$full, didm("r_net",P,RUS)$full,
+              didm("r_score",P,RUS)$matched, didm("r_pos",P,RUS)$matched, didm("r_net",P,RUS)$matched)
+etx(m_h2r, hdr6(c("Score","Positive","Net")), "H2 (appendix): Russia stance DiD.", "tab:ah2r", "tabA_h2_russia.tex")
+m_h3 <- list(didm("prop_rus",P,ALL)$full, didm("prop_ukr",P,ALL)$full, didm("prop_comb",P,ALL)$full,
+             didm("prop_rus",P,ALL)$matched, didm("prop_ukr",P,ALL)$matched, didm("prop_comb",P,ALL)$matched)
+etx(m_h3, hdr6(c("Russia","Ukraine","Combined")), "H3 (appendix): topic-proportion DiD.", "tab:ah3", "tabA_h3.tex")
+m_h4 <- list(didm("jsd",H,ALL)$full, didm("kl_sm",H,ALL)$full, didm("cosine",H,ALL)$full,
+             didm("jsd",H,ALL)$matched, didm("kl_sm",H,ALL)$matched, didm("cosine",H,ALL)$matched)
+etx(m_h4, hdr6(c("JSD","KL","Cosine")), "H4 (appendix): agenda-divergence DiD.", "tab:ah4", "tabA_h4.tex")
 
-## ---- TABLE 4: H4 agenda divergence (JSD / KL / Cosine) ----------------------
-m4 <- list(did("jsd",H,ALL)$full, did("kl_sm",H,ALL)$full, did("cosine",H,ALL)$full,
-           did("jsd",H,ALL)$matched, did("kl_sm",H,ALL)$matched, did("cosine",H,ALL)$matched)
-write_tab(m4, hdr(c("JSD","KL","Cosine")),
-          "H4 (divergence): post-payment DiD on agenda divergence. Negative = treated converge. Unit and month FE; SE clustered by unit and month.",
-          "tab:h4", "table4_h4.tex")
-
-cat("WROTE table1_h1_{combined,russia}, table2_h2_{combined,russia}, table3_h3, table4_h4 (.tex)\n")
+cat("WROTE table1_summary, table2_h1, table3_did_all + appendix tabA_h1/h2/h3/h4 (.tex)\n")

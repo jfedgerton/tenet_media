@@ -76,10 +76,10 @@ pred_did <- function(d, y){                                  # H2/H3/H4: post-pa
 ## FIGURE 1 (MAIN): predicted headline outcome, Tenet vs non-Tenet, per hypothesis
 ###############################################################################
 F1 <- rbind(
-  cbind(panel = "H1: Combined stance score\n(pre-payment selection)", pred_lvl(P[month < TREAT & n_ment_r >= MINMENT & n_ment_u >= MINMENT], "c_score")),
-  cbind(panel = "H2: Combined stance score\n(post-payment DiD)",      pred_did(P[n_ment_r >= MINMENT & n_ment_u >= MINMENT], "c_score")),
-  cbind(panel = "H3: Combined agenda share\n(post-payment DiD)",      pred_did(P, "prop_comb")),
-  cbind(panel = "H4: Agenda divergence (JSD)\n(post-payment DiD)",    pred_did(H, "jsd")))
+  cbind(panel = "H1: Combined positive rate\n(pre-payment selection)", pred_lvl(P[month < TREAT & n_ment_r >= MINMENT & n_ment_u >= MINMENT], "c_pos")),
+  cbind(panel = "H2: Combined positive rate\n(post-payment DiD)",      pred_did(P[n_ment_r >= MINMENT & n_ment_u >= MINMENT], "c_pos")),
+  cbind(panel = "H3: Combined topic proportion\n(post-payment DiD)",   pred_did(P, "prop_comb")),
+  cbind(panel = "H4: JS divergence\n(post-payment DiD)",               pred_did(H, "jsd")))
 F1[, panel := factor(panel, levels = unique(panel))]
 fwrite(F1, file.path(SC, "fig1_predicted_data.csv"))
 p1 <- ggplot(F1, aes(group, pred, colour = group)) +
@@ -258,17 +258,20 @@ pF <- ggplot(Df, aes(val, show)) +
 ggsave(file.path(SC, "figF_dumbbell.pdf"), pF, width = 9, height = 4)
 
 ## (G) RANKED LOLLIPOP -- every program ranked; Tenet shows highlighted ---------
-## Three measures: total Russia mentions, positive Russia comments (count), and
-## Combined stance score. All ~224 programs shown; the 3 Tenet shows stand out
-## (red, enlarged, labelled). Sorted within each panel.
-agg <- P[, .(total    = sum(n_ment_r, na.rm = TRUE),
-             positive = sum(fifelse(is.finite(r_pos), r_pos * n_ment_r, 0)),
-             combined = weighted.mean(c_score, n_ment_r, na.rm = TRUE),
-             tenet    = tenet[1]), by = unit]
-G <- melt(agg, id.vars = c("unit", "tenet"), measure.vars = c("total", "positive", "combined"),
+## The FOUR main-analysis outcomes: Russia positive rate, Combined positive rate,
+## Combined topic proportion (H3), JS divergence (H4). All ~224 programs shown;
+## the 3 Tenet shows are coloured (legend) and sorted within each panel.
+aR <- P[n_ment_r >= MINMENT, .(r_pos = weighted.mean(r_pos, n_ment_r)), by = unit]
+aC <- P[n_ment_r >= MINMENT & n_ment_u >= MINMENT, .(c_pos = weighted.mean(c_pos, n_ment_r)), by = unit]
+aP <- P[is.finite(prop_comb), .(prop_comb = weighted.mean(prop_comb, n_words)), by = unit]
+aJ <- H[is.finite(jsd), .(jsd = weighted.mean(jsd, n_sentences)), by = unit]
+agg <- Reduce(function(a, b) merge(a, b, by = "unit", all = TRUE), list(aR, aC, aP, aJ))
+agg[, tenet := as.integer(unit %in% TRU)]
+G <- melt(agg, id.vars = c("unit", "tenet"), measure.vars = c("r_pos", "c_pos", "prop_comb", "jsd"),
           variable.name = "measure", value.name = "val")
-G[, measure := factor(measure, levels = c("total", "positive", "combined"),
-                      labels = c("Total Russia mentions", "Positive Russia comments", "Combined stance score"))]
+G[, measure := factor(measure, levels = c("r_pos", "c_pos", "prop_comb", "jsd"),
+                      labels = c("Russia positive rate", "Combined positive rate",
+                                 "Combined topic proportion", "JS divergence"))]
 G <- G[is.finite(val)]
 G[, rk := frank(val, ties.method = "first"), by = measure]
 G[, grp := factor(ifelse(unit %in% TRU, nice_show(unit), "Other program"),
@@ -289,6 +292,6 @@ pG <- ggplot(G, aes(val, rk)) +
        subtitle = "Each lollipop is one program; the three Tenet shows are coloured.") +
   theme_pub + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank()) +
   guides(colour = guide_legend(override.aes = list(size = 3)))
-ggsave(file.path(SC, "figG_ranked.pdf"), pG, width = 12, height = 5)
+ggsave(file.path(SC, "figG_ranked.pdf"), pG, width = 14, height = 4.6)
 
 cat("WROTE fig1_predicted / figA_forest / figB_eventstudy / figC_sc_trajectory + figD_lollipop / figE_timeseries / figF_dumbbell / figG_ranked\n")
