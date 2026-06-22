@@ -140,6 +140,21 @@ etable(m3, tex = TRUE, file = file.path(SC, "table3_did_all.tex"), replace = TRU
        title = "Post-payment difference-in-differences across estimators, main outcomes (H2-H4). Treated $\\times$ Post; TWFE and Matched include log words and log audience, unit and month fixed effects, SE clustered by unit and month. The synthetic-control gap (in-space placebo $p$) is reported in the bottom row. Effects are small and lose significance across specifications.",
        label = "tab:did_main", notes = NOTE)
 
+## ---- TABLE 3 (SCM-only variant): synthetic-control DiD, main outcomes -------
+labs4 <- c("Russia positive", "Combined positive", "Combined topic share", "JS divergence")
+scm4  <- lapply(OUTS, function(o) scm(o[[2]][eval(o[[3]], o[[2]])], o[[1]], o[[4]]))   # c(gap, placebo p)
+gaprow <- vapply(scm4, function(s) ifelse(is.na(s[1]), "", sprintf("%.3f%s", s[1], star(s[2]))), "")
+prow   <- vapply(scm4, function(s) ifelse(is.na(s[2]), "", ifelse(s[2] < .001, "($<$.001)", sprintf("(%.3f)", s[2]))), "")
+t3s <- c("% requires \\usepackage{booktabs}", "\\begin{table}[!ht]\\centering",
+  "\\caption{Synthetic-control difference-in-differences, main outcomes (H2--H4). Each cell is the post-payment gap between the treated composite and its synthetic control; in-space placebo $p$ in parentheses. Donor weights are chosen to match the pre-payment trajectory.}",
+  "\\label{tab:did_scm}", "\\small", "\\begin{tabular}{l cccc}", "\\toprule",
+  paste0(" & ", paste(labs4, collapse = " & "), " \\\\"), "\\midrule",
+  paste0("Treated $-$ synthetic (gap) & ", paste(gaprow, collapse = " & "), " \\\\"),
+  paste0(" & ", paste(prow, collapse = " & "), " \\\\"),
+  "\\bottomrule", "\\multicolumn{5}{l}{\\footnotesize *** $p<.01$, ** $p<.05$, * $p<.10$ (in-space placebo).} \\\\",
+  "\\end{tabular}", "\\end{table}")
+writeLines(t3s, file.path(SC, "table3_did_scm.tex"))
+
 ###############################################################################
 ## APPENDIX -- full outcome breakdowns (score/pos/net, Ukraine, KL/Cosine) ----
 ###############################################################################

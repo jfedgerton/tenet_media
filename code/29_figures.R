@@ -208,21 +208,26 @@ build_pt <- function(o){ lab <- o[[1]]; dat <- o[[2]]; y <- o[[3]]; w <- o[[4]];
         if (!is.null(sp)) mk(sp[, .(month, cf = synth)], "Synthetic control")) }
 FI <- rbindlist(lapply(PTO, build_pt))
 FI[, series := factor(series, levels = c("Treated", "cf"), labels = c("Treated", "Counterfactual"))]
-FI[, estimator := factor(estimator, levels = c("TWFE (all controls)", "Matched controls", "Synthetic control"))]
-FI[, outcome := factor(outcome, levels = sapply(PTO, `[[`, 1))]
+FI[, estimator := factor(estimator, levels = c("TWFE (all controls)", "Matched controls", "Synthetic control"),
+                         labels = c("TWFE", "Matched", "Synthetic"))]
+FI[, outcome := factor(outcome, levels = sapply(PTO, `[[`, 1),
+                       labels = c("Russia positive", "Combined positive", "Combined topic prop.", "JS divergence"))]
+FI[, value := value - mean(value[month < TREAT], na.rm = TRUE), by = .(estimator, outcome, series)]   # centre on pre-payment mean (DiD cares about trends, not levels)
 fwrite(FI, file.path(SC, "figI_parallel_data.csv"))
 pI <- ggplot(FI, aes(month, value, colour = series, linetype = series)) +
+  geom_hline(yintercept = 0, colour = "grey85", linewidth = 0.3) +
   geom_vline(xintercept = as.numeric(TREAT), linetype = 2, colour = "grey55") +
   geom_line(linewidth = 0.6, na.rm = TRUE) +
-  facet_wrap(~ estimator + outcome, nrow = 3, scales = "free_y", labeller = labeller(.multi_line = FALSE)) +
   scale_colour_manual(values = c("Treated" = ACCENT, "Counterfactual" = "#0072B2")) +
   scale_linetype_manual(values = c("Treated" = 1, "Counterfactual" = 2)) +
   scale_x_date(date_labels = "%y") +
-  labs(x = NULL, y = "Outcome", colour = NULL, linetype = NULL,
-       title = "Parallel trends: treated vs. counterfactual under TWFE, matching, and synthetic control",
-       subtitle = "Rows = estimator, columns = outcome. Pre-payment overlap supports parallel trends (dashed line = Oct 2023).") +
-  theme_pub
-ggsave(file.path(SC, "figI_parallel.pdf"), pI, width = 13, height = 8)
+  labs(x = NULL, y = "Outcome (centred on pre-payment mean)", colour = NULL, linetype = NULL,
+       title = "Parallel trends: treated vs. counterfactual, centred on the pre-payment mean") +
+  theme_pub + theme(strip.text = element_text(size = 8))
+pI <- pI + if (requireNamespace("ggh4x", quietly = TRUE))
+  ggh4x::facet_grid2(estimator ~ outcome, scales = "free", independent = "y") else
+  facet_wrap(~ estimator + outcome, nrow = 3, scales = "free_y", labeller = label_wrap_gen(width = 16, multi_line = TRUE))
+ggsave(file.path(SC, "figI_parallel.pdf"), pI, width = 12, height = 7.5)
 ###############################################################################
 ## EXPLORATORY (pick one for the manuscript): per-show Russia/Combined positivity
 ##   figD_lollipop    -- the 3 Tenet shows vs control reference levels (lollipop)
@@ -327,8 +332,7 @@ pG <- ggplot(G, aes(val, rk)) +
   scale_colour_manual(values = GPAL) +
   scale_size_manual(values = GSZ, guide = "none") + scale_linewidth_manual(values = GLW, guide = "none") +
   labs(x = "Value (programs ranked low to high)", y = NULL, colour = NULL,
-       title = "Where the Tenet shows rank among all programs",
-       subtitle = "Each lollipop is one program; the three Tenet shows are coloured.") +
+       title = "Where the Tenet shows rank among all programs") +
   theme_pub + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank()) +
   guides(colour = guide_legend(override.aes = list(size = 3)))
 ggsave(file.path(SC, "figG_ranked.pdf"), pG, width = 9, height = 8)
