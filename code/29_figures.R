@@ -1,13 +1,12 @@
 ###############################################################################
-# 29_figures.R  --  publication figures, built from the SAME panel as 13.
-#
-#   fig1_predicted.pdf   MAIN: model-predicted outcome for a Tenet vs a non-Tenet
-#                        show (pre-payment H1, controls held at sample means).
-#   figA_forest.pdf      APPENDIX: forest of H1 coefficients, all 9 outcomes.
-#   figB_eventstudy.pdf  APPENDIX: dynamic DiD (leads/lags) = parallel-trends check.
-#   figC_sc_trajectory.pdf APPENDIX: treated composite vs synthetic control path.
-#
-# Underlying numbers also dumped as fig*_data.csv. Seed 123. PI: Jared Edgerton.
+# 29_figures.R  --  publication figures for H1-H4, built from the same panels
+# as 13/15.
+#   fig1_predicted.pdf    MAIN: model-predicted headline outcome, Tenet vs
+#                         non-Tenet, one panel per hypothesis (H1-H4).
+#   figA_forest.pdf       APPENDIX: forest of all outcomes, faceted by hypothesis.
+#   figB_eventstudy.pdf   APPENDIX: dynamic DiD (parallel-trends check), H2 & H4.
+#   figC_sc_trajectory.pdf APPENDIX: treated vs synthetic-control path.
+# Underlying numbers dumped as fig*_data.csv. Seed 123. PI: Jared Edgerton (PSU).
 ###############################################################################
 suppressMessages({ library(data.table); library(fixest); library(Matching); library(quadprog); library(ggplot2) })
 set.seed(123)
@@ -17,7 +16,7 @@ MINMENT <- 5
 TIM <- c("timcast_irl", "tim_pool_daily_news", "the_culture_war_podcast_with_tim_pool")
 TRU <- c("tim_pool", "the_benny_show", "the_rubin_report")
 
-## ---- panel build (identical to 13_main_h1h3.R) ------------------------------
+## ---- stance/agenda panel (identical to 13) ----------------------------------
 P <- fread(file.path(SC, "baseline_panel.csv")); P[, month := as.Date(month)]; P <- P[month < TRUNC]
 P[, mfac := factor(month)]; P[, tenet := as.integer(unit %in% TRU)]
 P[, post := as.integer(month >= TREAT)]; P[, tp := tenet * post]
@@ -30,6 +29,14 @@ AM <- fread(file.path(SC, "audience_monthly.csv")); AM[, month := as.Date(month)
 P <- merge(P, AM[, .(unit, month, aud_mid)], by = c("unit", "month"), all.x = TRUE); P[, log_aud_m := log(aud_mid)]
 P[, prop_rus := n_ment_r / n_words]; P[, prop_ukr := n_ment_u / n_words]; P[, prop_comb := (n_ment_r + n_ment_u) / n_words]
 
+## ---- H4 divergence panel (main arm = all/contemp/rare) ----------------------
+H <- fread(file.path(SC, "h4_divergence_panel.csv")); H[, month := as.Date(month)]
+H <- H[topicset == "all" & reference == "contemp" & rare == "rare"]
+H[, unit := fifelse(unit %in% TIM, "tim_pool", unit)]
+H[, tenet := as.integer(unit %in% TRU)]; H[, post := as.integer(month >= TREAT)]; H[, tp := tenet * post]
+H <- merge(H, Vunit, by = c("unit", "month"), all.x = TRUE); H[, log_words := log(n_words)]
+H <- merge(H, AM[, .(unit, month, aud_mid)], by = c("unit", "month"), all.x = TRUE); H[, log_aud_m := log(aud_mid)]
+
 ## matched donor set (same Mahalanobis match as 13)
 covs <- P[month < TREAT, .(laud = mean(log_aud_m, na.rm = TRUE), mlogw = mean(log_words, na.rm = TRUE)), by = unit]
 covs[, tenet := as.integer(unit %in% TRU)]; covs <- covs[is.finite(laud) & is.finite(mlogw)]
@@ -37,103 +44,99 @@ mout <- Match(Tr = covs$tenet, X = as.matrix(covs[, .(laud, mlogw)]), M = 3, rep
 matched_units <- unique(c(covs$unit[mout$index.treated], covs$unit[mout$index.control]))
 
 theme_pub <- theme_bw(base_size = 12) +
-  theme(panel.grid.minor = element_blank(),
-        axis.text.x = element_text(angle = 0, hjust = 0.5),   # Jared: x labels NOT angled
-        strip.background = element_rect(fill = "grey92", colour = NA),
-        legend.position = "bottom")
+  theme(panel.grid.minor = element_blank(), axis.text.x = element_text(angle = 0, hjust = 0.5),
+        strip.background = element_rect(fill = "grey92", colour = NA), legend.position = "bottom")
+
+## ---- predicted-contrast helpers ---------------------------------------------
+pred_lvl <- function(d, y){                                  # H1: pre-payment level
+  d <- d[is.finite(get(y)) & is.finite(log_words) & is.finite(log_aud_m)]
+  m <- feols(as.formula(paste0(y, " ~ tenet + log_words + log_aud_m | mfac")), d, cluster = ~ mfac + unit)
+  d0 <- copy(d); d0[, tenet := 0]; muC <- mean(predict(m, d0)); ct <- coeftable(m)["tenet", ]
+  data.table(group = c("Non-Tenet", "Tenet"), pred = c(muC, muC + ct["Estimate"]),
+             lo = c(muC, muC + ct["Estimate"] - 1.96*ct["Std. Error"]),
+             hi = c(muC, muC + ct["Estimate"] + 1.96*ct["Std. Error"]), p = ct["Pr(>|t|)"]) }
+pred_did <- function(d, y){                                  # H2/H3/H4: post-payment DiD
+  d <- d[is.finite(get(y)) & is.finite(log_words) & is.finite(log_aud_m)]
+  m <- feols(as.formula(paste0(y, " ~ tp + log_words + log_aud_m | unit + month")), d, cluster = ~ unit + month)
+  muC <- mean(d[post == 1 & tenet == 0][[y]], na.rm = TRUE); ct <- coeftable(m)["tp", ]
+  data.table(group = c("Non-Tenet", "Tenet"), pred = c(muC, muC + ct["Estimate"]),
+             lo = c(muC, muC + ct["Estimate"] - 1.96*ct["Std. Error"]),
+             hi = c(muC, muC + ct["Estimate"] + 1.96*ct["Std. Error"]), p = ct["Pr(>|t|)"]) }
 
 ###############################################################################
-## FIGURE 1 (MAIN): model-predicted outcome, Tenet vs non-Tenet (pre-payment H1)
-##   Fit the H1 control model; predict the conditional mean with tenet=0 vs
-##   tenet=1, averaging month FE and holding controls at observed values, so the
-##   gap = the Tenet coefficient and the CI comes from its clustered SE.
+## FIGURE 1 (MAIN): predicted headline outcome, Tenet vs non-Tenet, per hypothesis
 ###############################################################################
-HEAD <- list(c("r_score", "Russia stance score"),
-             c("r_pos",   "Russia positive rate"),
-             c("c_score", "Combined stance score (R - U)"))
-pred_rows <- list()
-for (h in HEAD){ y <- h[1]; lbl <- h[2]
-  d <- P[month < TREAT & n_ment_r >= MINMENT & is.finite(get(y)) & is.finite(log_words) & is.finite(log_aud_m)]
-  m <- feols(as.formula(paste0(y, " ~ tenet + log_words + log_aud_m | mfac")), d, cluster = ~ mfac + unit)
-  d0 <- copy(d); d0[, tenet := 0]; d1 <- copy(d); d1[, tenet := 1]
-  muC <- mean(predict(m, newdata = d0)); muT <- mean(predict(m, newdata = d1))
-  ct <- coeftable(m)["tenet", ]; b <- ct["Estimate"]; se <- ct["Std. Error"]
-  pred_rows[[length(pred_rows) + 1]] <- data.table(
-    outcome = lbl,
-    group   = c("Non-Tenet control", "Tenet show"),
-    pred    = c(muC, muT),
-    lo      = c(muC, muC + (b - 1.96 * se)),
-    hi      = c(muC, muC + (b + 1.96 * se)),
-    p       = ct["Pr(>|t|)"])
-}
-F1 <- rbindlist(pred_rows); F1[, outcome := factor(outcome, levels = sapply(HEAD, `[`, 2))]
+F1 <- rbind(
+  cbind(panel = "H1: Combined stance score\n(pre-payment selection)", pred_lvl(P[month < TREAT & n_ment_r >= MINMENT & n_ment_u >= MINMENT], "c_score")),
+  cbind(panel = "H2: Combined stance score\n(post-payment DiD)",      pred_did(P[n_ment_r >= MINMENT & n_ment_u >= MINMENT], "c_score")),
+  cbind(panel = "H3: Combined agenda share\n(post-payment DiD)",      pred_did(P, "prop_comb")),
+  cbind(panel = "H4: Agenda divergence (JSD)\n(post-payment DiD)",    pred_did(H, "jsd")))
+F1[, panel := factor(panel, levels = unique(panel))]
 fwrite(F1, file.path(SC, "fig1_predicted_data.csv"))
 p1 <- ggplot(F1, aes(group, pred, colour = group)) +
-  geom_hline(yintercept = 0, linewidth = 0.3, colour = "grey60") +
-  geom_point(size = 3) +
-  geom_errorbar(aes(ymin = lo, ymax = hi), width = 0.15, linewidth = 0.7) +
-  facet_wrap(~ outcome, scales = "free_y", nrow = 1) +
-  scale_colour_manual(values = c("Non-Tenet control" = "grey45", "Tenet show" = "#b2182b")) +
-  scale_x_discrete(labels = function(x) gsub(" ", "\n", x)) +    # break x labels onto 2 lines, unangled
+  geom_hline(yintercept = 0, linewidth = 0.3, colour = "grey70") +
+  geom_point(size = 3) + geom_errorbar(aes(ymin = lo, ymax = hi), width = 0.16, linewidth = 0.7) +
+  facet_wrap(~ panel, scales = "free_y", nrow = 1) +
+  scale_colour_manual(values = c("Non-Tenet" = "grey45", "Tenet" = "#b2182b")) +
   labs(x = NULL, y = "Predicted outcome", colour = NULL,
-       title = "Predicted pre-payment stance: Tenet vs. non-Tenet shows",
-       subtitle = "H1 model; controls (log words, log audience) at observed values. Bars = 95% CI on the Tenet gap.") +
+       title = "Predicted outcome for a Tenet vs. non-Tenet show, by hypothesis",
+       subtitle = "Controls held at observed values. Bars = 95% CI on the Tenet gap (H1 level; H2-H4 treated x post).") +
   theme_pub
-ggsave(file.path(SC, "fig1_predicted.pdf"), p1, width = 9, height = 4)
+ggsave(file.path(SC, "fig1_predicted.pdf"), p1, width = 12, height = 4)
 
 ###############################################################################
-## FIGURE A (APPENDIX): forest of H1 coefficients, all 9 outcomes (control spec)
+## FIGURE A (APPENDIX): forest of all outcomes, faceted by hypothesis
 ###############################################################################
-OUT9 <- list(c("r_score","Russia: score"), c("r_pos","Russia: pos rate"), c("r_net","Russia: net"),
-             c("u_score","Ukraine: score"), c("u_pos","Ukraine: pos rate"), c("u_net","Ukraine: net"),
-             c("c_score","Combined: score"), c("c_pos","Combined: pos rate"), c("c_net","Combined: net"))
-fr <- list()
-for (o in OUT9){ y <- o[1]
-  d <- P[month < TREAT & n_ment_r >= MINMENT & is.finite(get(y)) & is.finite(log_words) & is.finite(log_aud_m)]
+fr_lvl <- function(y, lbl, hyp, dat = P){
+  d <- dat[month < TREAT & n_ment_r >= MINMENT & is.finite(get(y)) & is.finite(log_words) & is.finite(log_aud_m)]
   m <- feols(as.formula(paste0(y, " ~ tenet + log_words + log_aud_m | mfac")), d, cluster = ~ mfac + unit)
-  ct <- coeftable(m)["tenet", ]
-  fr[[length(fr) + 1]] <- data.table(outcome = o[2], est = ct["Estimate"], se = ct["Std. Error"],
-                                     target = sub(":.*", "", o[2]))
-}
-FA <- rbindlist(fr); FA[, `:=`(lo = est - 1.96 * se, hi = est + 1.96 * se)]
+  ct <- coeftable(m)["tenet", ]; data.table(hyp = hyp, outcome = lbl, est = ct["Estimate"], se = ct["Std. Error"]) }
+fr_did <- function(y, lbl, hyp, dat = P, mm = TRUE){
+  d <- dat[is.finite(get(y)) & is.finite(log_words) & is.finite(log_aud_m)]; if (mm) d <- d[n_ment_r >= MINMENT]
+  m <- feols(as.formula(paste0(y, " ~ tp + log_words + log_aud_m | unit + month")), d, cluster = ~ unit + month)
+  ct <- coeftable(m)["tp", ]; data.table(hyp = hyp, outcome = lbl, est = ct["Estimate"], se = ct["Std. Error"]) }
+FA <- rbindlist(list(
+  fr_lvl("r_score","Russia: score","H1 selection"),  fr_lvl("r_pos","Russia: pos","H1 selection"),   fr_lvl("r_net","Russia: net","H1 selection"),
+  fr_lvl("u_score","Ukraine: score","H1 selection"), fr_lvl("u_pos","Ukraine: pos","H1 selection"),  fr_lvl("u_net","Ukraine: net","H1 selection"),
+  fr_lvl("c_score","Combined: score","H1 selection"),fr_lvl("c_pos","Combined: pos","H1 selection"), fr_lvl("c_net","Combined: net","H1 selection"),
+  fr_did("r_score","Russia: score","H2 stance"),  fr_did("r_pos","Russia: pos","H2 stance"),   fr_did("r_net","Russia: net","H2 stance"),
+  fr_did("u_score","Ukraine: score","H2 stance"), fr_did("u_pos","Ukraine: pos","H2 stance"),  fr_did("u_net","Ukraine: net","H2 stance"),
+  fr_did("c_score","Combined: score","H2 stance"),fr_did("c_pos","Combined: pos","H2 stance"), fr_did("c_net","Combined: net","H2 stance"),
+  fr_did("prop_rus","Russia share","H3 agenda", mm = FALSE), fr_did("prop_ukr","Ukraine share","H3 agenda", mm = FALSE), fr_did("prop_comb","Combined share","H3 agenda", mm = FALSE),
+  fr_did("jsd","JSD","H4 divergence", dat = H, mm = FALSE), fr_did("kl_sm","KL","H4 divergence", dat = H, mm = FALSE), fr_did("cosine","Cosine dist.","H4 divergence", dat = H, mm = FALSE)))
+FA[, `:=`(lo = est - 1.96*se, hi = est + 1.96*se)]
 FA[, sig := factor(ifelse(lo > 0 | hi < 0, "95% CI excludes 0", "n.s."))]
-FA[, outcome := factor(outcome, levels = rev(sapply(OUT9, `[`, 2)))]
+FA[, hyp := factor(hyp, levels = c("H1 selection","H2 stance","H3 agenda","H4 divergence"))]
+FA[, outcome := factor(outcome, levels = rev(unique(outcome)))]
 fwrite(FA, file.path(SC, "figA_forest_data.csv"))
 pA <- ggplot(FA, aes(est, outcome, colour = sig)) +
   geom_vline(xintercept = 0, linetype = 2, colour = "grey55") +
-  geom_point(size = 2.4) + geom_errorbarh(aes(xmin = lo, xmax = hi), height = 0.25) +
+  geom_point(size = 2.2) + geom_errorbarh(aes(xmin = lo, xmax = hi), height = 0.25) +
+  facet_wrap(~ hyp, scales = "free", ncol = 2) +
   scale_colour_manual(values = c("95% CI excludes 0" = "#b2182b", "n.s." = "grey55")) +
-  labs(x = "Tenet pre-payment level difference (coef.)", y = NULL, colour = NULL,
-       title = "H1 selection effects across all stance outcomes") +
+  labs(x = "Coefficient (H1: level; H2-H4: treated x post)", y = NULL, colour = NULL,
+       title = "Treatment coefficients across all outcomes, by hypothesis") +
   theme_pub
-ggsave(file.path(SC, "figA_forest.pdf"), pA, width = 8, height = 5)
+ggsave(file.path(SC, "figA_forest.pdf"), pA, width = 10, height = 7)
 
 ###############################################################################
-## FIGURE B (APPENDIX): dynamic DiD / event study = PARALLEL-TRENDS check.
-##   6-month relative-time bins; reference = the bin just before treatment.
-##   Flat, ~0 pre-treatment leads => treated & control move in parallel; the
-##   absence of a post jump is what makes the null credible.
+## FIGURE B (APPENDIX): event study (parallel-trends), H2 stance + H4 divergence
 ###############################################################################
-es_one <- function(ycol, ylab){
-  d <- P[is.finite(get(ycol)) & is.finite(log_words) & is.finite(log_aud_m) & n_ment_r >= 1 & month >= SCM_WIN]
-  d[, rel := as.integer(round(as.numeric(month - TREAT) / 30.4375))]
-  d[, bin := floor(rel / 6) * 6]                         # 6-month buckets
-  d[, bin := factor(bin)]; d[, bin := relevel(bin, ref = "-6")]   # ref = [-6,0) pre-treat
-  m <- feols(as.formula(paste0(ycol, " ~ i(bin, tenet, ref = '-6') + log_words + log_aud_m | unit + month")),
-             d, cluster = ~ unit + month)
+es_one <- function(dat, ycol, ylab, mm = TRUE){
+  d <- dat[is.finite(get(ycol)) & is.finite(log_words) & is.finite(log_aud_m) & month >= SCM_WIN]
+  if (mm) d <- d[n_ment_r >= 1]
+  d[, rel := as.integer(round(as.numeric(month - TREAT) / 30.4375))]; d[, bin := factor(floor(rel/6) * 6)]
+  d[, bin := relevel(bin, ref = "-6")]
+  m <- feols(as.formula(paste0(ycol, " ~ i(bin, tenet, ref = '-6') + log_words + log_aud_m | unit + month")), d, cluster = ~ unit + month)
   ct <- as.data.table(coeftable(m), keep.rownames = "term")[grepl("^bin::", term)]
   ct[, bin := as.integer(sub("bin::(-?\\d+):tenet", "\\1", term))]
-  rbind(data.table(bin = -6, Estimate = 0, `Std. Error` = 0),
-        ct[, .(bin, Estimate, `Std. Error`)], fill = TRUE)[, outcome := ylab][]
-}
-FB <- rbind(es_one("r_pos", "Russia positive rate"), es_one("c_score", "Combined stance score"))
-setnames(FB, "Std. Error", "se"); FB[, `:=`(lo = Estimate - 1.96 * se, hi = Estimate + 1.96 * se)]
+  rbind(data.table(bin = -6, Estimate = 0, `Std. Error` = 0), ct[, .(bin, Estimate, `Std. Error`)], fill = TRUE)[, outcome := ylab][] }
+FB <- rbind(es_one(P, "c_score", "H2: Combined stance score"), es_one(H, "jsd", "H4: Agenda divergence (JSD)", mm = FALSE))
+setnames(FB, "Std. Error", "se"); FB[, `:=`(lo = Estimate - 1.96*se, hi = Estimate + 1.96*se)]
 fwrite(FB, file.path(SC, "figB_eventstudy_data.csv"))
 pB <- ggplot(FB, aes(bin, Estimate)) +
-  geom_hline(yintercept = 0, colour = "grey60") +
-  geom_vline(xintercept = 0, linetype = 2, colour = "#b2182b") +
-  geom_ribbon(aes(ymin = lo, ymax = hi), alpha = 0.15) +
-  geom_line() + geom_point(size = 1.8) +
+  geom_hline(yintercept = 0, colour = "grey60") + geom_vline(xintercept = 0, linetype = 2, colour = "#b2182b") +
+  geom_ribbon(aes(ymin = lo, ymax = hi), alpha = 0.15) + geom_line() + geom_point(size = 1.8) +
   facet_wrap(~ outcome, scales = "free_y", nrow = 1) +
   labs(x = "Months relative to payment (6-month bins, 0 = Oct 2023)", y = "Tenet x period (coef.)",
        title = "Event study: pre-payment parallel trends and post-payment (non-)effect") +
@@ -141,8 +144,7 @@ pB <- ggplot(FB, aes(bin, Estimate)) +
 ggsave(file.path(SC, "figB_eventstudy.pdf"), pB, width = 9, height = 4)
 
 ###############################################################################
-## FIGURE C (APPENDIX): synthetic-control trajectory (treated vs synthetic).
-##   Good pre-period overlap = the SC counterfactual is credible; post gap = effect.
+## FIGURE C (APPENDIX): synthetic-control trajectory (treated vs synthetic)
 ###############################################################################
 scm_w <- function(Y0p, y1p){ n <- ncol(Y0p); D <- t(Y0p) %*% Y0p + diag(1e-8, n); dv <- as.vector(t(Y0p) %*% y1p)
   A <- cbind(rep(1, n), diag(n)); b <- c(1, rep(0, n)); tryCatch(solve.QP(D, dv, A, b, meq = 1)$solution, error = function(e) rep(1/n, n)) }
@@ -154,26 +156,123 @@ scm_path <- function(pan, col, wcol){
   for (j in seq_len(ncol(dm))){ v <- dm[, j]; if (anyNA(v)) { v[is.na(v)] <- mean(v, na.rm = TRUE); dm[, j] <- v } }
   good <- which(apply(dm, 2, function(x) all(is.finite(x)) & sd(x) > 0)); if (length(good) < 5 || anyNA(y1)) return(NULL)
   Y0 <- dm[, good, drop = FALSE]; w <- scm_w(Y0[pre, , drop = FALSE], y1[pre])
-  data.table(month = mo, treated = y1, synth = as.vector(Y0 %*% w))
-}
+  data.table(month = mo, treated = y1, synth = as.vector(Y0 %*% w)) }
 scC <- rbind(
-  if (!is.null(x <- scm_path(P, "r_pos", "n_ment_r")))  x[, outcome := "Russia positive rate"],
-  if (!is.null(x <- scm_path(P, "c_score", "n_ment_r"))) x[, outcome := "Combined stance score"],
-  fill = TRUE)
+  if (!is.null(x <- scm_path(P, "c_score", "n_ment_r"))) x[, outcome := "H2: Combined stance score"],
+  if (!is.null(x <- scm_path(H, "jsd", "n_sentences"))) x[, outcome := "H4: Agenda divergence (JSD)"], fill = TRUE)
 if (!is.null(scC) && nrow(scC)){
-  FC <- melt(scC, id.vars = c("month", "outcome"), measure.vars = c("treated", "synth"),
-             variable.name = "series", value.name = "value")
+  FC <- melt(scC, id.vars = c("month", "outcome"), measure.vars = c("treated", "synth"), variable.name = "series", value.name = "value")
   FC[, series := factor(series, labels = c("Treated (Tenet)", "Synthetic control"))]
   fwrite(FC, file.path(SC, "figC_sc_trajectory_data.csv"))
   pC <- ggplot(FC, aes(month, value, colour = series, linetype = series)) +
-    geom_vline(xintercept = as.numeric(TREAT), linetype = 2, colour = "grey55") +
-    geom_line(linewidth = 0.7) +
+    geom_vline(xintercept = as.numeric(TREAT), linetype = 2, colour = "grey55") + geom_line(linewidth = 0.7) +
     facet_wrap(~ outcome, scales = "free_y", nrow = 1) +
     scale_colour_manual(values = c("Treated (Tenet)" = "#b2182b", "Synthetic control" = "grey35")) +
     scale_x_date(date_labels = "%Y") +
     labs(x = NULL, y = "Outcome", colour = NULL, linetype = NULL,
-         title = "Synthetic-control fit: treated composite vs. synthetic counterfactual") +
-    theme_pub
+         title = "Synthetic-control fit: treated composite vs. synthetic counterfactual") + theme_pub
   ggsave(file.path(SC, "figC_sc_trajectory.pdf"), pC, width = 9, height = 4)
 }
-cat("WROTE fig1_predicted / figA_forest / figB_eventstudy / figC_sc_trajectory (.pdf + _data.csv)\n")
+###############################################################################
+## EXPLORATORY (pick one for the manuscript): per-show Russia/Combined positivity
+##   figD_lollipop    -- the 3 Tenet shows vs control reference levels (lollipop)
+##   figE_timeseries  -- monthly trajectory, Tenet shows vs control mean + IQR band
+##   figF_dumbbell    -- pre vs post per Tenet show (before/after payment)
+## Shown for Russia positive rate and Combined stance score. x-axis numeric (no angle).
+###############################################################################
+EXO <- list(c("r_pos", "Russia positive rate"), c("c_score", "Combined stance score"))
+shw <- P[n_ment_r >= MINMENT & is.finite(r_pos) & is.finite(c_score),
+         .(r_pos = weighted.mean(r_pos, n_ment_r), c_score = weighted.mean(c_score, n_ment_r),
+           w = sum(n_ment_r), tenet = tenet[1]), by = unit]
+
+## (D) LOLLIPOP -- Tenet shows vs control reference (mean + 90th pct) ----------
+Dl <- rbindlist(lapply(EXO, function(o){ col <- o[1]
+  t <- shw[tenet == 1, .(label = unit, val = get(col), kind = "Tenet show")]
+  r <- shw[tenet == 0]; rr <- data.table(label = c("Control mean", "Control 90th pct"),
+           val = c(weighted.mean(r[[col]], r$w), as.numeric(quantile(r[[col]], .9))), kind = "Reference")
+  rbind(t, rr)[, outcome := o[2]][] }))
+Dl[, label := factor(label, levels = rev(unique(label)))]
+fwrite(Dl, file.path(SC, "figD_lollipop_data.csv"))
+pD <- ggplot(Dl, aes(val, label, colour = kind)) +
+  geom_segment(aes(x = 0, xend = val, yend = label), linewidth = 0.5) + geom_point(size = 3) +
+  facet_wrap(~ outcome, scales = "free_x") +
+  scale_colour_manual(values = c("Tenet show" = "#b2182b", "Reference" = "grey45")) +
+  labs(x = "Mention-weighted value", y = NULL, colour = NULL,
+       title = "Per-show positivity: Tenet shows vs. control reference levels") + theme_pub
+ggsave(file.path(SC, "figD_lollipop.pdf"), pD, width = 9, height = 4)
+
+## (E) TIME SERIES -- monthly, Tenet shows vs control mean + IQR band ----------
+## Three measures: Russia mention share (all months), Russia positive rate and
+## Combined stance score (among >=5-mention months). Tenet shows = coloured lines.
+TSMEAS <- list(c("prop_rus","Russia mention share","n_words","0"),
+               c("r_pos","Russia positive rate","n_ment_r","1"),
+               c("c_score","Combined stance score","n_ment_r","1"))
+mk <- function(o){ col <- o[1]; lab <- o[2]; w <- o[3]; ment <- o[4] == "1"
+  base <- if (ment) P[n_ment_r >= MINMENT & is.finite(get(col))] else P[is.finite(get(col))]
+  con <- base[tenet == 0, .(m = weighted.mean(get(col), get(w)),
+                            lo = as.numeric(quantile(get(col), .25, na.rm = TRUE)),
+                            hi = as.numeric(quantile(get(col), .75, na.rm = TRUE))), by = month][, outcome := lab]
+  tre <- base[tenet == 1, .(unit, month, val = get(col))][, outcome := lab]
+  list(con, tre) }
+res <- lapply(TSMEAS, mk)
+TS <- rbindlist(lapply(res, `[[`, 1)); TT <- rbindlist(lapply(res, `[[`, 2))
+TS[, outcome := factor(outcome, levels = sapply(TSMEAS, `[`, 2))]; TT[, outcome := factor(outcome, levels = sapply(TSMEAS, `[`, 2))]
+fwrite(TT, file.path(SC, "figE_timeseries_data.csv"))
+pE <- ggplot() +
+  geom_ribbon(data = TS, aes(month, ymin = lo, ymax = hi), fill = "grey80", alpha = .5) +
+  geom_line(data = TS, aes(month, m), colour = "grey40") +
+  geom_line(data = TT, aes(month, val, colour = unit), linewidth = .6) +
+  geom_vline(xintercept = as.numeric(TREAT), linetype = 2, colour = "grey30") +
+  facet_wrap(~ outcome, scales = "free_y", nrow = 1) + scale_x_date(date_labels = "%Y") +
+  labs(x = NULL, y = "Value", colour = "Tenet show",
+       title = "Monthly Russia agenda & stance: Tenet shows vs. control mean (IQR band)",
+       subtitle = "Dashed line = payment (Oct 2023). Grey = control mean and interquartile band.") + theme_pub
+ggsave(file.path(SC, "figE_timeseries.pdf"), pE, width = 12, height = 4.5)
+
+## (F) DUMBBELL -- pre vs post per Tenet show ----------------------------------
+Df <- rbindlist(lapply(EXO, function(o){ col <- o[1]
+  P[tenet == 1 & n_ment_r >= MINMENT & is.finite(get(col)),
+    .(pre = weighted.mean(get(col)[post == 0], n_ment_r[post == 0]),
+      post = weighted.mean(get(col)[post == 1], n_ment_r[post == 1])), by = unit][, outcome := o[2]] }))
+Df <- melt(Df, id.vars = c("unit", "outcome"), variable.name = "period", value.name = "val")
+fwrite(Df, file.path(SC, "figF_dumbbell_data.csv"))
+pF <- ggplot(Df, aes(val, unit)) +
+  geom_line(aes(group = unit), colour = "grey60") + geom_point(aes(colour = period), size = 3) +
+  facet_wrap(~ outcome, scales = "free_x") +
+  scale_colour_manual(values = c("pre" = "grey55", "post" = "#b2182b")) +
+  labs(x = "Mention-weighted value", y = NULL, colour = NULL,
+       title = "Per-show change before vs. after payment (Tenet shows)") + theme_pub
+ggsave(file.path(SC, "figF_dumbbell.pdf"), pF, width = 9, height = 4)
+
+## (G) RANKED LOLLIPOP -- every program ranked; Tenet shows highlighted ---------
+## Three measures: total Russia mentions, positive Russia comments (count), and
+## Combined stance score. All ~224 programs shown; the 3 Tenet shows stand out
+## (red, enlarged, labelled). Sorted within each panel.
+agg <- P[, .(total    = sum(n_ment_r, na.rm = TRUE),
+             positive = sum(fifelse(is.finite(r_pos), r_pos * n_ment_r, 0)),
+             combined = weighted.mean(c_score, n_ment_r, na.rm = TRUE),
+             tenet    = tenet[1]), by = unit]
+G <- melt(agg, id.vars = c("unit", "tenet"), measure.vars = c("total", "positive", "combined"),
+          variable.name = "measure", value.name = "val")
+G[, measure := factor(measure, levels = c("total", "positive", "combined"),
+                      labels = c("Total Russia mentions", "Positive Russia comments", "Combined stance score"))]
+G <- G[is.finite(val)]
+G[, rk := frank(val, ties.method = "first"), by = measure]
+G[, grp := ifelse(tenet == 1, "Tenet show", "Other program")]
+lab <- G[tenet == 1]
+fwrite(G, file.path(SC, "figG_ranked_data.csv"))
+pG <- ggplot(G, aes(val, rk)) +
+  geom_segment(aes(x = 0, xend = val, yend = rk, colour = grp, linewidth = grp), alpha = 0.7) +
+  geom_point(aes(colour = grp, size = grp)) +
+  geom_text(data = lab, aes(label = unit), colour = "#b2182b", size = 2.6, hjust = 1.1) +
+  facet_wrap(~ measure, scales = "free", nrow = 1) +
+  scale_colour_manual(values = c("Tenet show" = "#b2182b", "Other program" = "grey78")) +
+  scale_size_manual(values = c("Tenet show" = 2.6, "Other program" = 0.7), guide = "none") +
+  scale_linewidth_manual(values = c("Tenet show" = 0.8, "Other program" = 0.3), guide = "none") +
+  labs(x = "Value (programs ranked low to high)", y = NULL, colour = NULL,
+       title = "Where the Tenet shows rank among all programs",
+       subtitle = "Each lollipop is one program; the three Tenet shows are highlighted in red.") +
+  theme_pub + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+ggsave(file.path(SC, "figG_ranked.pdf"), pG, width = 12, height = 5)
+
+cat("WROTE fig1_predicted / figA_forest / figB_eventstudy / figC_sc_trajectory + figD_lollipop / figE_timeseries / figF_dumbbell / figG_ranked\n")

@@ -47,6 +47,9 @@ units <- unique(NT$unit)
 ua <- vapply(units, function(u) if (u == "tim_pool") sum(sapply(TIM, al), na.rm = TRUE) else al(u), numeric(1))
 umeta <- data.table(unit = units, mean_audience = ua); umeta[, log_aud := log(mean_audience)]
 umeta[, treated := as.integer(unit %in% TRU)]
+# time-varying monthly audience (Jon Green) -> log_aud_m, merged by unit-month (match 13/15)
+AM <- fread(file.path(SC, "audience_monthly.csv")); AM[, month := as.Date(month)]
+AM <- AM[, .(unit, month, log_aud_m = log(aud_mid))]
 
 ## ---- SCM (quadprog + in-space placebo), treat date a parameter (same as 19) ----
 scm_weights <- function(Y0pre, y1pre) { n <- ncol(Y0pre); Dmat <- t(Y0pre) %*% Y0pre + diag(1e-8, n); dvec <- as.vector(t(Y0pre) %*% y1pre); Amat <- cbind(rep(1, n), diag(n)); bvec <- c(1, rep(0, n)); tryCatch(solve.QP(Dmat, dvec, Amat, bvec, meq = 1)$solution, error = function(e) rep(1/n, n)) }
@@ -82,15 +85,17 @@ run_cell <- function(tname, s) {
   pan <- merge(NT, ag, by = c("unit", "month"), all.x = TRUE)
   pan[is.na(n78), n78 := 0L]; pan[is.na(n79), n79 := 0L]; pan[, ncomb := n78 + n79]
   pan[, prop_78 := n78 / n_total]; pan[, prop_79 := n79 / n_total]; pan[, prop_comb := ncomb / n_total]
-  pan <- merge(pan, umeta[, .(unit, log_aud, treated)], by = "unit", all.x = TRUE)
+  pan <- merge(pan, umeta[, .(unit, treated)], by = "unit", all.x = TRUE)
+  pan <- merge(pan, AM, by = c("unit", "month"), all.x = TRUE)        # time-varying audience
+  pan[, log_ntot := log(n_total)]                                      # volume control (match 13/15)
   pan[, tenet := treated]
   res <- list(); k <- 0L
   for (td in TREAT_DATES) {
     pan[, post := as.integer(month >= td)]; pan[, tp := tenet * post]
     for (o in OUT) {
       col <- o[1]
-      d <- pan[n_total >= MINTOT & !is.na(log_aud)]
-      v <- grabT(tryCatch(feols(as.formula(paste(col, "~ tp + post:log_aud | unit + month")), d, cluster = ~unit), error = function(e) NULL), "tp")
+      d <- pan[n_total >= MINTOT & is.finite(log_aud_m)]
+      v <- grabT(tryCatch(feols(as.formula(paste(col, "~ tp + log_ntot + log_aud_m | unit + month")), d, cluster = ~unit+month), error = function(e) NULL), "tp")
       k <- k + 1L; res[[k]] <- data.table(target = tname, shift = s, treat_date = as.character(td), outcome = col, spec = "H3_TWFE", estimate = v[1], se = v[2], p = v[3])
       sc <- tryCatch(scm_outcome(d, col, td), error = function(e) c(NA, NA, NA))
       k <- k + 1L; res[[k]] <- data.table(target = tname, shift = s, treat_date = as.character(td), outcome = col, spec = "H3_SCM", estimate = sc[1], se = NA_real_, p = sc[3])

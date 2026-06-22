@@ -1,107 +1,90 @@
 """
 28_label_examples.py  --  reviewer-facing exhibit of the stance coding scheme.
-For each target (Russia, Ukraine) and each stance label (positive / negative /
-neutral), pull the highest-confidence example SENTENCES from the labeled corpus
-so a reader can see exactly what the classifier calls positive vs. negative.
+For each target (Russia, Ukraine) and stance label (positive/negative/neutral),
+pull the highest-confidence example SENTENCES from the labeled corpus so a reader
+can see what the classifier calls positive vs. negative.
 
-Reads  data/sc_results/opus_c0_corpus_labeled.parquet  (canonical full_opus_patched
-labels + 4-class probabilities). If that file has no sentence-text column, it
-joins to data/corpus_with_topics.parquet on a shared sentence id.
+Memory-safe: the labeled parquet (opus_c0_corpus_labeled.parquet) carries
+sentence_id + 4-class probs but NOT the text. We (1) pick the example sentence_ids
+from the small labeled table, then (2) read ONLY those rows' text from the big
+corpus_with_topics.parquet via a pyarrow pushdown filter -- never loading the full
+corpus (which OOMs a login node).
 
-Writes data/sc_results/tab_label_examples.{tex,csv}.
-Seed 123. PI: Jared Edgerton (PSU).
+Writes data/sc_results/tab_label_examples.{tex,csv}. Seed 123. PI: Jared Edgerton.
 """
-import pandas as pd, numpy as np, re, sys
+import pandas as pd, numpy as np, re
+import pyarrow.dataset as ds, pyarrow.compute as pc
 
 CO = "/storage/group/LiberalArts/default/jfe4_collab/podcast"; SC = CO + "/data/sc_results"
-N_EX   = 4          # examples per (target, label)
-MAXLEN = 240        # truncate long sentences
-RNG = np.random.default_rng(123)
+CORPUS = CO + "/data/corpus_with_topics.parquet"
+N_EX, MAXLEN, CAND = 4, 240, 60          # examples per cell; truncation; candidates to fetch per cell
+np.random.seed(123)
 
-lab = pd.read_parquet(SC + "/opus_c0_corpus_labeled.parquet")
-print("labeled cols:", list(lab.columns))
+lab = pd.read_parquet(SC + "/opus_c0_corpus_labeled.parquet",
+                      columns=["sentence_id", "topic", "russia_label", "russia_p_pos", "russia_p_neg",
+                               "ukraine_label", "ukraine_p_pos", "ukraine_p_neg"])
+print("labeled rows", len(lab))
 
-# ---- locate the sentence text -------------------------------------------------
-TEXT_CANDS = ["sentence", "text", "sentence_text", "body", "utterance", "clean_text", "sent"]
-ID_CANDS   = ["sentence_id", "sent_id", "uid", "id", "idx", "row_id"]
-text_col = next((c for c in TEXT_CANDS if c in lab.columns), None)
-if text_col is None:
-    cw = pd.read_parquet(CO + "/data/corpus_with_topics.parquet")
-    cwt = next((c for c in TEXT_CANDS if c in cw.columns), None)
-    key = next((c for c in ID_CANDS if c in lab.columns and c in cw.columns), None)
-    if cwt is None:
-        sys.exit("FATAL: no text column in corpus_with_topics either; columns=%s" % list(cw.columns))
-    if key is None:
-        # fall back to positional alignment only if row counts match (sharded build keeps order)
-        if len(cw) == len(lab):
-            lab = lab.reset_index(drop=True); lab["__text"] = cw[cwt].values; text_col = "__text"
-            print("joined text by row position (equal length)")
-        else:
-            sys.exit("FATAL: no shared id and lengths differ (%d vs %d)" % (len(lab), len(cw)))
-    else:
-        lab = lab.merge(cw[[key, cwt]].rename(columns={cwt: "__text"}), on=key, how="left"); text_col = "__text"
-        print("joined text on key:", key)
-print("using text column:", text_col)
-
-# ---- probability columns: derive p_neu where possible -------------------------
-def prob(target, k):  # returns Series or None
-    c = f"{target}_p_{k}"; return lab[c] if c in lab.columns else None
-
-rows = []
+# ---- pick candidate sentence_ids per (target, label), ranked by confidence ----
+picks = []   # (Target, Label, sentence_id, conf)
 for target, T in [("russia", "Russia"), ("ukraine", "Ukraine")]:
-    lc = f"{target}_label"
-    p_pos, p_neg = prob(target, "pos"), prob(target, "neg")
-    p_neu = prob(target, "neu")
-    if p_neu is None and p_pos is not None and p_neg is not None:
-        p_neu = (1.0 - p_pos - p_neg).clip(lower=0)
+    p_pos, p_neg = lab[f"{target}_p_pos"], lab[f"{target}_p_neg"]
+    p_neu = (1.0 - p_pos - p_neg).clip(lower=0)
     conf = {"positive": p_pos, "negative": p_neg, "neutral": p_neu}
+    lc = f"{target}_label"
     for label in ["positive", "negative", "neutral"]:
-        sub = lab[lab[lc] == label].copy()
+        sub = lab[lab[lc] == label]
         if sub.empty:
             continue
-        c = conf[label]
-        if c is not None:
-            sub = sub.assign(__conf=c.loc[sub.index].values).sort_values("__conf", ascending=False)
-        else:
-            sub = sub.assign(__conf=np.nan)
-        seen = set(); picked = 0
-        for _, r in sub.iterrows():
-            txt = re.sub(r"\s+", " ", str(r[text_col])).strip()
-            if len(txt) < 25 or txt.lower() in seen:    # skip stubs/dups
-                continue
-            seen.add(txt.lower())
-            if len(txt) > MAXLEN: txt = txt[:MAXLEN].rsplit(" ", 1)[0] + "..."
-            rows.append(dict(Target=T, Label=label.capitalize(),
-                             Confidence=round(float(r["__conf"]), 3) if pd.notna(r["__conf"]) else np.nan,
-                             Sentence=txt))
-            picked += 1
-            if picked >= N_EX: break
+        top = sub.assign(__c=conf[label].loc[sub.index]).nlargest(CAND, "__c")
+        for sid, c in zip(top["sentence_id"], top["__c"]):
+            picks.append((T, label, sid, float(c)))
+P = pd.DataFrame(picks, columns=["Target", "Label", "sentence_id", "conf"])
+want_ids = P["sentence_id"].unique().tolist()
+print("candidate sentence_ids", len(want_ids))
 
+# ---- fetch ONLY those sentences' text (pushdown filter; memory-light) ----------
+dset = ds.dataset(CORPUS, format="parquet")
+tbl = dset.to_table(columns=["sentence_id", "sentence"],
+                    filter=pc.is_in(ds.field("sentence_id"), value_set=__import__("pyarrow").array(want_ids)))
+txt = tbl.to_pandas().drop_duplicates("sentence_id").set_index("sentence_id")["sentence"]
+print("fetched texts", len(txt))
+P["Sentence"] = P["sentence_id"].map(txt)
+
+# ---- assemble: clean, dedup, keep top N per cell --------------------------------
+rows = []
+for (T, label), g in P.dropna(subset=["Sentence"]).groupby(["Target", "Label"], sort=False):
+    seen, kept = set(), 0
+    for _, r in g.sort_values("conf", ascending=False).iterrows():
+        s = re.sub(r"\s+", " ", str(r.Sentence)).strip()
+        if len(s) < 25 or s.lower() in seen:
+            continue
+        seen.add(s.lower())
+        if len(s) > MAXLEN:
+            s = s[:MAXLEN].rsplit(" ", 1)[0] + "..."
+        rows.append(dict(Target=T, Label=label.capitalize(), Confidence=round(r.conf, 3), Sentence=s))
+        kept += 1
+        if kept >= N_EX:
+            break
 EX = pd.DataFrame(rows)
 EX.to_csv(SC + "/tab_label_examples.csv", index=False)
 print("examples:", len(EX), "\n", EX.groupby(["Target", "Label"]).size())
 
 # ---- LaTeX --------------------------------------------------------------------
 def esc(s):
-    for a, b in [("\\", r"\textbackslash{}"), ("&", r"\&"), ("%", r"\%"), ("$", r"\$"),
-                 ("#", r"\#"), ("_", r"\_"), ("{", r"\{"), ("}", r"\}"), ("~", r"\textasciitilde{}"),
-                 ("^", r"\textasciicircum{}")]:
+    for a, b in [("\\", r"\textbackslash{}"), ("&", r"\&"), ("%", r"\%"), ("$", r"\$"), ("#", r"\#"),
+                 ("_", r"\_"), ("{", r"\{"), ("}", r"\}"), ("~", r"\textasciitilde{}"), ("^", r"\textasciicircum{}")]:
         s = s.replace(a, b)
     return s
-
-out = [r"% requires \usepackage{booktabs}",
-       r"\begin{table}[!ht]\centering",
-       r"\caption{Stance coding scheme with highest-confidence example sentences from the labeled corpus (canonical \texttt{full\_opus\_patched} run). `Conf.' is the model's class probability.}",
-       r"\label{tab:label_examples}", r"\small",
-       r"\begin{tabular}{l l c p{0.62\textwidth}}", r"\toprule",
+out = [r"% requires \usepackage{booktabs}", r"\begin{table}[!ht]\centering",
+       r"\caption{Stance coding scheme with highest-confidence example sentences (canonical \texttt{full\_opus\_patched} run). `Conf.' is the model's class probability.}",
+       r"\label{tab:label_examples}", r"\small", r"\begin{tabular}{l l c p{0.60\textwidth}}", r"\toprule",
        r"Target & Stance & Conf. & Example sentence \\", r"\midrule"]
-prev_t = None
+prev = None
 for _, r in EX.iterrows():
-    tgt = r.Target if r.Target != prev_t else ""
-    if r.Target != prev_t and prev_t is not None: out.append(r"\midrule")
-    prev_t = r.Target
-    conf = "" if pd.isna(r.Confidence) else f"{r.Confidence:.2f}"
-    out.append(f"{tgt} & {r.Label} & {conf} & {esc(r.Sentence)} \\\\")
+    if r.Target != prev and prev is not None: out.append(r"\midrule")
+    tgt = r.Target if r.Target != prev else ""; prev = r.Target
+    out.append(f"{tgt} & {r.Label} & {r.Confidence:.2f} & {esc(r.Sentence)} \\\\")
 out += [r"\bottomrule", r"\end{tabular}", r"\end{table}"]
 open(SC + "/tab_label_examples.tex", "w").write("\n".join(out))
 print("WROTE tab_label_examples.{csv,tex}")

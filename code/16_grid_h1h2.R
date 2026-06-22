@@ -1,173 +1,212 @@
 ###############################################################################
-# 16_grid_h1h2.R  --  probability mass-transfer robustness grid for H1 & H2,
-# swept over candidate TREATMENT DATES and all five specifications.
+# 16_grid_h1h2.R  --  MASTER robustness grid for H1 (pre-payment level) and
+# H2 (post-payment DiD), one-factor-at-a-time off the MAIN spec (13_main_h1h3.R).
+# Supersedes the old probshift-only 16 AND 26_min_mention_sweep.R (folded in here).
 #
-# Probability perturbation (per sentence, 4-class softmax): move mass `s` from a
-# source class to a destination class (clipped, sum stays 1), re-argmax, recompute
-# score=p_pos-p_neg. 12 ops + identity, crossed Russia x Ukraine x s in
-# seq(0,0.30,0.025) = 13 x 13 x 13 mass cells.
+# SAME BASIS AS 13/15:  time-varying monthly audience (log_aud_m) + total words
+# (log_words), month FE, TWO-WAY clustering (H1: month+unit ; H2: unit+month).
 #
-# TREATMENT-DATE SWEEP (3 event-anchored dates from the DOJ indictment timeline):
-#   2022-12-01  Russia begins the Tenet relationship (Chen <-> RT persona "Grigoriann")
-#   2023-10-01  first payments to influencers (paid Oct 2023 - Aug 2024)
-#   2023-11-01  podcasters join / Tenet public launch (Nov 8, 2023)
-# Window truncated at the INDICTMENT (2024-09-04 -> month < 2024-09): public
-# acknowledgement is expected to halt any effect.
+# Spec set per outcome (mirrors 13 exactly):
+#   H1: simple | simpleM | ctrl | ctrlM            (term = tenet; pre-period, |mfac)
+#   H2: twfe | twfe_ctrl | twfeM | twfeM_ctrl | scm | scm_ctrl   (term = tp; |unit+month)
+#   "simple/twfe"  = NO CONTROLS (the cell the old grid was missing)
+#   "ctrl"         = + log_words + log_aud_m
+#   "M"            = Mahalanobis-matched donor set (pre-period audience+words, per date)
+#   "scm_ctrl"     = SCM on the outcome residualized on log_words | unit+month
 #
-# Specs per (mass cell x treat date x outcome):
-#   H1_OLS      y ~ tenet + t + t^2 + log_aud           (pre-period, cluster show)
-#   H1_matched  same, Mahalanobis-matched control set
-#   H2_TWFE     y ~ tp + post:log_aud | unit + month    (cluster show)
-#   H2_matched  same TWFE on matched control set
-#   H2_SCM      composite treated vs donor pool, quadprog weights + in-space placebo
+# Outcomes (15): {score, pos, net} x {Russia, Ukraine, Combined}  PLUS
+#                {vol_pos, vol_posneg} x {Russia, Ukraine, Combined}.
 #
-# Outcomes: stance metric in {score, pos, net} x {Russia, Ukraine, Combined} (9), PLUS
-#   comment-VOLUME counts: vol_pos (# positive sentences) and vol_posneg (# positive
-#   - # negative) x {Russia, Ukraine, Combined} (6). Combined = Russia - Ukraine.
+# AXES SWEPT (each perturbed off baseline = shift 0 / min_ment 5 / conditional):
+#   (A) PROB MASS-TRANSFER : 13 Russia ops x 13 Ukraine ops x shift seq(0,0.30,0.025)
+#   (B) MIN-MENTION        : {0,1,3,5,10,20}
+#   (C) MISSING->0 CODING  : {conditional, zero}   (B x C crossed; A holds at 5/conditional)
+#   (D) TREATMENT DATE     : {2022-12-01 RT-relationship, 2023-10-01 first-payment,
+#                             2023-11-01 join/launch}  -- swept in BOTH A and B.
 #
-# Input : data/sc_results/probs_4class.csv   Output: master_probshift_coefs.csv
-# Treated units = the_benny_show, the_rubin_report, tim_pool (3 feeds pooled).
-# PI: Jared Edgerton (PSU). Seed 123.
+# Input : data/sc_results/probs_4class.csv  (+ audience_monthly.csv, loso_volume.csv)
+# Output: data/sc_results/master_grid_h1h2.csv   Seed 123.  PI: Jared Edgerton (PSU).
 ###############################################################################
-
 suppressMessages({ library(data.table); library(fixest); library(Matching); library(quadprog); library(parallel) })
-set.seed(123)
-setDTthreads(1)
+set.seed(123); setDTthreads(1)
 NC <- as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", "8"))
+SCM_IN_SHIFT <- FALSE       # SCM is fully swept in axis B (dates x min_ment x coding);
+                            # set TRUE to ALSO run it under every label-noise cell (very heavy).
 
-COLLAB <- "/storage/group/LiberalArts/default/jfe4_collab/podcast"; SC <- file.path(COLLAB, "data", "sc_results")
-TREAT_DATES <- as.Date(c("2022-12-01","2023-10-01","2023-11-01"))
-START <- as.Date("2018-01-01"); TRUNC <- as.Date("2024-09-01")   # truncate at indictment
-MINMENT <- 5; SCM_WIN <- as.Date("2021-01-01")
+CO <- "/storage/group/LiberalArts/default/jfe4_collab/podcast"; SC <- file.path(CO, "data", "sc_results")
+TREAT_DATES <- as.Date(c("2022-12-01", "2023-10-01", "2023-11-01"))
+START <- as.Date("2018-01-01"); TRUNC <- as.Date("2024-09-01"); SCM_WIN <- as.Date("2021-01-01")
+MINMENT_BASE <- 5; MINMENT_GRID <- c(0, 1, 3, 5, 10, 20)
 TIM <- c("timcast_irl", "tim_pool_daily_news", "the_culture_war_podcast_with_tim_pool")
 TRU <- c("tim_pool", "the_benny_show", "the_rubin_report")
-norm <- function(x) gsub("[^a-z0-9]", "", tolower(x))
 
-## ---- load sentence-level 4-class probs ----
-S <- fread(file.path(SC, "probs_4class.csv"))
-S[, date := as.Date(date)]
+## ---- sentence-level 4-class probs (for the mass-transfer axis) --------------
+S <- fread(file.path(SC, "probs_4class.csv")); S[, date := as.Date(date)]
 S <- S[!is.na(date) & date >= START & date < TRUNC]
-S[, month := as.Date(format(date, "%Y-%m-01"))]
-S[, unit := fifelse(show %in% TIM, "tim_pool", show)]
+S[, month := as.Date(format(date, "%Y-%m-01"))]; S[, unit := fifelse(show %in% TIM, "tim_pool", show)]
 Rpp <- S$russia_p_pos; Rpn <- S$russia_p_neg; Rpu <- S$russia_p_neu; Rpx <- S$russia_p_unment
 Upp <- S$ukraine_p_pos; Upn <- S$ukraine_p_neg; Upu <- S$ukraine_p_neu; Upx <- S$ukraine_p_unment
 unit_v <- S$unit; month_v <- S$month
-MINM <- min(S$month)
 
-## ---- audience control + matched donor set ----
-aud <- fread(file.path(COLLAB, "data", "show_data", "treated_terminal_blocks_weightedDecay.csv"))
-aud[, key := norm(title)]; aud <- aud[!is.na(mean_audience)]
-al <- function(s) { v <- aud[key == norm(s), mean_audience]; if (length(v) == 0) NA_real_ else v[1] }
-units <- unique(S$unit)
-ua <- vapply(units, function(u) if (u == "tim_pool") sum(sapply(TIM, al), na.rm = TRUE) else al(u), numeric(1))
-umeta <- data.table(unit = units, mean_audience = ua); umeta[, log_aud := log(mean_audience)]
-umeta[, treated := as.integer(unit %in% TRU)]
+## ---- time-varying controls (same sources as 13) ----------------------------
+AM <- fread(file.path(SC, "audience_monthly.csv")); AM[, month := as.Date(month)]
+AM <- AM[, .(unit, month, log_aud_m = log(aud_mid))]
+V  <- fread(file.path(SC, "loso_volume.csv")); V[, month := as.Date(month)]
+V[, unit := fifelse(show %in% TIM, "tim_pool", show)]
+VOL <- V[, .(log_words = log(mean(n_sent_total))), by = .(unit, month)]
 
-cov <- aud[, .(key, mean_audience, episodes_per_week, weeks_active)]
-uc <- rbindlist(lapply(units, function(u) {
-  if (u == "tim_pool") { x <- cov[key %in% norm(TIM)]; data.table(unit = u, a = sum(x$mean_audience, na.rm = T), e = mean(x$episodes_per_week, na.rm = T), w = max(x$weeks_active, na.rm = T)) }
-  else { x <- cov[key == norm(u)]; if (nrow(x) == 0) return(NULL); data.table(unit = u, a = x$mean_audience[1], e = x$episodes_per_week[1], w = x$weeks_active[1]) }
-}), fill = TRUE)
-uc[, tenet := as.integer(unit %in% TRU)]; uc <- uc[is.finite(log(a))]
-X <- as.matrix(uc[, .(la = log(a), e, w)]); X[is.na(X)] <- 0
-mo <- Match(Tr = uc$tenet, X = X, M = 3, replace = TRUE)
-MU <- unique(c(uc$unit[mo$index.treated], uc$unit[mo$index.control]))
-
-## ---- mass-transfer op ----
+## ---- mass-transfer op (identity = op 0) ------------------------------------
 apply_op <- function(pp, pn, pu, px, op, s) {
-  if (op == 1L)      { m <- pmin(s, pp); pp <- pp - m; pu <- pu + m }
-  else if (op == 2L) { m <- pmin(s, pn); pn <- pn - m; pu <- pu + m }
-  else if (op == 3L) { m <- pmin(s, pu); pu <- pu - m; pp <- pp + m }
-  else if (op == 4L) { m <- pmin(s, pu); pu <- pu - m; pn <- pn + m }
-  else if (op == 5L) { m <- pmin(s, pu); pu <- pu - m; pp <- pp + m/2; pn <- pn + m/2 }
-  else if (op == 6L) { ma <- pmin(s, pp); mb <- pmin(s, pn); pp <- pp - ma; pn <- pn - mb; pu <- pu + ma + mb }
-  else if (op == 7L) { m <- pmin(s, pp); pp <- pp - m; px <- px + m }
-  else if (op == 8L) { m <- pmin(s, pn); pn <- pn - m; px <- px + m }
-  else if (op == 9L) { m <- pmin(s, px); px <- px - m; pp <- pp + m }
-  else if (op == 10L){ m <- pmin(s, px); px <- px - m; pn <- pn + m }
-  else if (op == 11L){ m <- pmin(s, px); px <- px - m; pp <- pp + m/2; pn <- pn + m/2 }
-  else if (op == 12L){ ma <- pmin(s, pp); mb <- pmin(s, pn); pp <- pp - ma; pn <- pn - mb; px <- px + ma + mb }
+  if (op == 0L) {} else
+  if (op == 1L) { m <- pmin(s, pp); pp <- pp - m; pu <- pu + m } else
+  if (op == 2L) { m <- pmin(s, pn); pn <- pn - m; pu <- pu + m } else
+  if (op == 3L) { m <- pmin(s, pu); pu <- pu - m; pp <- pp + m } else
+  if (op == 4L) { m <- pmin(s, pu); pu <- pu - m; pn <- pn + m } else
+  if (op == 5L) { m <- pmin(s, pu); pu <- pu - m; pp <- pp + m/2; pn <- pn + m/2 } else
+  if (op == 6L) { ma <- pmin(s, pp); mb <- pmin(s, pn); pp <- pp - ma; pn <- pn - mb; pu <- pu + ma + mb } else
+  if (op == 7L) { m <- pmin(s, pp); pp <- pp - m; px <- px + m } else
+  if (op == 8L) { m <- pmin(s, pn); pn <- pn - m; px <- px + m } else
+  if (op == 9L) { m <- pmin(s, px); px <- px - m; pp <- pp + m } else
+  if (op == 10L){ m <- pmin(s, px); px <- px - m; pn <- pn + m } else
+  if (op == 11L){ m <- pmin(s, px); px <- px - m; pp <- pp + m/2; pn <- pn + m/2 } else
+  if (op == 12L){ ma <- pmin(s, pp); mb <- pmin(s, pn); pp <- pp - ma; pn <- pn - mb; px <- px + ma + mb }
   list(pp, pn, pu, px)
 }
 OPNAME <- c("none","Pos>Neu","Neg>Neu","Neu>Pos","Neu>Neg","Neu>NegPos","NegPos>Neu",
             "Pos>Unm","Neg>Unm","Unm>Pos","Unm>Neg","Unm>NegPos","NegPos>Unm")
-grabT <- function(m, term) { ct <- tryCatch(coeftable(m), error = function(e) NULL); if (is.null(ct) || !term %in% rownames(ct)) return(c(NA, NA, NA)); as.numeric(ct[term, c("Estimate", "Std. Error", "Pr(>|t|)")]) }
 
-## ---- SCM (quadprog simplex + in-space placebo), treat date is a parameter ----
-scm_weights <- function(Y0pre, y1pre) { n <- ncol(Y0pre); Dmat <- t(Y0pre) %*% Y0pre + diag(1e-8, n); dvec <- as.vector(t(Y0pre) %*% y1pre); Amat <- cbind(rep(1, n), diag(n)); bvec <- c(1, rep(0, n)); tryCatch(solve.QP(Dmat, dvec, Amat, bvec, meq = 1)$solution, error = function(e) rep(1/n, n)) }
-scm_one <- function(y1, Y0, pre) { w <- scm_weights(Y0[pre, , drop = FALSE], y1[pre]); g <- y1 - as.vector(Y0 %*% w); list(ratio = sqrt(mean(g[!pre]^2)) / sqrt(mean(g[pre]^2)), gap = mean(g[!pre])) }
-scm_outcome <- function(pan, col, wcol, treat) {
-  dd <- pan[!is.na(get(col)) & month >= SCM_WIN]; tr <- dd[treated == 1]; if (nrow(tr) == 0) return(c(NA, NA, NA))
-  comp <- tr[, .(y = weighted.mean(get(col), pmax(get(wcol), 1))), by = month]
-  months <- sort(unique(dd$month)); pre <- months < treat
-  if (sum(pre) < 6 || sum(!pre) < 2) return(c(NA, NA, NA))
-  y1 <- comp[match(months, comp$month)]$y
-  don <- dcast(dd[treated == 0], month ~ unit, value.var = col); don <- don[match(months, don$month)]; dm <- as.matrix(don[, -1])
-  good <- which(colSums(is.na(dm)) == 0 & apply(dm, 2, sd) > 0); if (length(good) < 5 || any(is.na(y1))) return(c(NA, NA, NA))
-  Y0 <- dm[, good, drop = FALSE]; main <- scm_one(y1, Y0, pre)
-  ratios <- c(); for (j in seq_len(ncol(Y0))) { o <- scm_one(Y0[, j], Y0[, -j, drop = FALSE], pre); if (is.finite(o$ratio)) ratios <- c(ratios, o$ratio) }
-  pval <- if (length(ratios)) (sum(ratios >= main$ratio) + 1) / (length(ratios) + 1) else NA
-  c(main$gap, main$ratio, pval)
-}
-stance <- list(c("Russia","score","r_score"), c("Russia","pos","r_pos"), c("Russia","net","r_net"),
-               c("Ukraine","score","u_score"), c("Ukraine","pos","u_pos"), c("Ukraine","net","u_net"),
-               c("Combined","score","c_score"), c("Combined","pos","c_pos"), c("Combined","net","c_net"),
-               c("Russia","vol_pos","vol_pos_r"),  c("Russia","vol_posneg","vol_posneg_r"),
-               c("Ukraine","vol_pos","vol_pos_u"), c("Ukraine","vol_posneg","vol_posneg_u"),
-               c("Combined","vol_pos","vol_pos_c"),c("Combined","vol_posneg","vol_posneg_c"))
-
-run_cell <- function(ro, uo, s) {
-  R <- apply_op(Rpp, Rpn, Rpu, Rpx, ro, s)
-  U <- apply_op(Upp, Upn, Upu, Upx, uo, s)
+## ---- build a unit-month panel for a given (rus_op, ukr_op, shift) -----------
+## Produces conditional outcomes (r_score..c_net), volume outcomes, AND zero-coded
+## (unmentioned=0) versions, plus n_ment_r/u, n_total, log_aud_m, log_words.
+build_panel <- function(ro, uo, s) {
+  R <- apply_op(Rpp, Rpn, Rpu, Rpx, ro, s); U <- apply_op(Upp, Upn, Upu, Upx, uo, s)
   Rm <- max.col(cbind(R[[1]], R[[2]], R[[3]], R[[4]]), ties.method = "first")
   Um <- max.col(cbind(U[[1]], U[[2]], U[[3]], U[[4]]), ties.method = "first")
   sd <- data.table(unit = unit_v, month = month_v,
-                   r_ment = Rm != 4L, r_sc = R[[1]] - R[[2]], r_p = Rm == 1L, r_neg = Rm == 2L, r_o = c(1L,-1L,0L,0L)[Rm],
-                   u_ment = Um != 4L, u_sc = U[[1]] - U[[2]], u_p = Um == 1L, u_neg = Um == 2L, u_o = c(1L,-1L,0L,0L)[Um])
+    r_ment = Rm != 4L, r_sc = R[[1]] - R[[2]], r_p = Rm == 1L, r_neg = Rm == 2L, r_o = c(1L,-1L,0L,0L)[Rm],
+    u_ment = Um != 4L, u_sc = U[[1]] - U[[2]], u_p = Um == 1L, u_neg = Um == 2L, u_o = c(1L,-1L,0L,0L)[Um])
   aggR <- sd[r_ment == TRUE, .(n_ment_r = .N, r_score = mean(r_sc), r_pos = mean(r_p), r_net = mean(r_o)), by = .(unit, month)]
   aggU <- sd[u_ment == TRUE, .(n_ment_u = .N, u_score = mean(u_sc), u_pos = mean(u_p), u_net = mean(u_o)), by = .(unit, month)]
-  # comment-VOLUME counts over ALL sentences in the unit-month (positive / negative)
   aggV <- sd[, .(n_total = .N, vol_pos_r = sum(r_p), vol_neg_r = sum(r_neg), vol_pos_u = sum(u_p), vol_neg_u = sum(u_neg)), by = .(unit, month)]
-  pan <- merge(aggR, aggU, by = c("unit", "month"), all = TRUE)
-  pan <- merge(pan, aggV, by = c("unit", "month"), all = TRUE)
-  pan <- merge(pan, umeta[, .(unit, log_aud, treated)], by = "unit", all.x = TRUE)
-  for (cc in c("n_total","vol_pos_r","vol_neg_r","vol_pos_u","vol_neg_u")) pan[is.na(get(cc)), (cc) := 0L]
-  pan[, t := as.integer(round(as.numeric(month - MINM) / 30.4375))]; pan[, t2 := t^2]; pan[, tenet := treated]
+  pan <- merge(merge(aggV, aggR, by = c("unit","month"), all.x = TRUE), aggU, by = c("unit","month"), all.x = TRUE)
+  for (cc in c("n_ment_r","n_ment_u","vol_pos_r","vol_neg_r","vol_pos_u","vol_neg_u")) pan[is.na(get(cc)), (cc) := 0L]
+  pan[, tenet := as.integer(unit %in% TRU)]
   pan[, c_score := r_score - u_score]; pan[, c_pos := r_pos - u_pos]; pan[, c_net := r_net - u_net]
-  # volume outcomes: vol_pos (# positive) and vol_posneg (# positive - # negative); Combined = Russia - Ukraine
   pan[, vol_posneg_r := vol_pos_r - vol_neg_r]; pan[, vol_posneg_u := vol_pos_u - vol_neg_u]
   pan[, vol_pos_c := vol_pos_r - vol_pos_u]; pan[, vol_posneg_c := vol_posneg_r - vol_posneg_u]
-  out <- vector("list", length(TREAT_DATES) * length(stance) * 5L); k <- 0L
-  for (td in TREAT_DATES) {
-    pan[, post := as.integer(month >= td)]; pan[, tp := tenet * post]
-    for (o in stance) {
-      set <- o[1]; metric <- o[2]; col <- o[3]
-      if (grepl("^vol", metric)) d <- pan[!is.na(log_aud) & !is.na(get(col))]
-      else if (set == "Combined") d <- pan[n_ment_r >= MINMENT & n_ment_u >= MINMENT & !is.na(log_aud) & !is.na(get(col))]
-      else if (set == "Russia") d <- pan[n_ment_r >= MINMENT & !is.na(log_aud) & !is.na(get(col))]
-      else d <- pan[n_ment_u >= MINMENT & !is.na(log_aud) & !is.na(get(col))]
-      pre <- d[post == 0]; prem <- pre[unit %in% MU]; dmU <- d[unit %in% MU]
-      f1 <- as.formula(paste(col, "~ tenet + t + t2 + log_aud"))
-      ftw <- as.formula(paste(col, "~ tp + post:log_aud | unit + month"))
-      wcol <- if (grepl("^vol", metric)) "n_total" else if (set == "Ukraine") "n_ment_u" else "n_ment_r"
-      add <- function(spec, v) { k <<- k + 1L; out[[k]] <<- data.table(rus_op = ro, ukr_op = uo, shift = s, treat_date = as.character(td), set = set, metric = metric, spec = spec, estimate = v[1], se = v[2], p = v[3]) }
-      add("H1_OLS",     grabT(tryCatch(feols(f1, pre, cluster = ~unit), error = function(e) NULL), "tenet"))
-      add("H1_matched", grabT(tryCatch(feols(f1, prem, cluster = ~unit), error = function(e) NULL), "tenet"))
-      add("H2_TWFE",    grabT(tryCatch(feols(ftw, d, cluster = ~unit), error = function(e) NULL), "tp"))
-      add("H2_matched", grabT(tryCatch(feols(ftw, dmU, cluster = ~unit), error = function(e) NULL), "tp"))
-      sc <- tryCatch(scm_outcome(d, col, wcol, td), error = function(e) c(NA, NA, NA))
-      add("H2_SCM", c(sc[1], NA_real_, sc[3]))
-    }
-  }
-  rbindlist(out)
+  # zero-coded (unmentioned -> 0): conditional value x mention-rate; missing month -> 0
+  z <- function(val, nm) fifelse(nm > 0 & is.finite(val), val * nm / pan$n_total, 0)
+  pan[, r_score0 := z(r_score, n_ment_r)]; pan[, r_pos0 := z(r_pos, n_ment_r)]; pan[, r_net0 := z(r_net, n_ment_r)]
+  pan[, u_score0 := z(u_score, n_ment_u)]; pan[, u_pos0 := z(u_pos, n_ment_u)]; pan[, u_net0 := z(u_net, n_ment_u)]
+  pan[, c_score0 := r_score0 - u_score0]; pan[, c_pos0 := r_pos0 - u_pos0]; pan[, c_net0 := r_net0 - u_net0]
+  pan <- merge(pan, AM,  by = c("unit","month"), all.x = TRUE)
+  pan <- merge(pan, VOL, by = c("unit","month"), all.x = TRUE)
+  pan[, mfac := factor(month)]
+  pan[]
 }
 
-grid <- as.data.table(expand.grid(rus_op = 0:12, ukr_op = 0:12, s = seq(0, 0.30, 0.025), KEEP.OUT.ATTRS = FALSE))
-cat("CELLS", nrow(grid), "DATES", length(TREAT_DATES), "CORES", NC, "\n")
-res <- mclapply(seq_len(nrow(grid)), function(i) run_cell(grid$rus_op[i], grid$ukr_op[i], grid$s[i]), mc.cores = NC)
-fin <- rbindlist(res, fill = TRUE)
+## ---- SCM helper (identical to 13: gap-fill donors + in-space placebo p) -----
+scm_w <- function(Y0p, y1p){ n <- ncol(Y0p); D <- t(Y0p) %*% Y0p + diag(1e-8, n); dv <- as.vector(t(Y0p) %*% y1p)
+  A <- cbind(rep(1, n), diag(n)); b <- c(1, rep(0, n)); tryCatch(solve.QP(D, dv, A, b, meq = 1)$solution, error = function(e) rep(1/n, n)) }
+scm1 <- function(y1, Y0, pre){ w <- scm_w(Y0[pre, , drop = FALSE], y1[pre]); g <- y1 - as.vector(Y0 %*% w)
+  list(r = sqrt(mean(g[!pre]^2)) / sqrt(mean(g[pre]^2)), gap = mean(g[!pre])) }
+scm <- function(pan, col, wcol, td){
+  dd <- pan[!is.na(get(col)) & month >= SCM_WIN]; tr <- dd[tenet == 1]; if (!nrow(tr)) return(c(NA, NA))
+  comp <- tr[, .(y = weighted.mean(get(col), pmax(get(wcol), 1))), by = month]; mo <- sort(comp$month); pre <- mo < td
+  if (sum(pre) < 6 || sum(!pre) < 2) return(c(NA, NA)); y1 <- comp$y[match(mo, comp$month)]
+  don <- dcast(dd[tenet == 0], month ~ unit, value.var = col); don <- don[match(mo, don$month)]; dm <- as.matrix(don[, -1])
+  for (j in seq_len(ncol(dm))){ v <- dm[, j]; if (anyNA(v)) { v[is.na(v)] <- mean(v, na.rm = TRUE); dm[, j] <- v } }
+  good <- which(apply(dm, 2, function(x) all(is.finite(x)) & sd(x) > 0)); if (length(good) < 5 || anyNA(y1)) return(c(NA, NA))
+  Y0 <- dm[, good, drop = FALSE]; m <- scm1(y1, Y0, pre); rs <- c()
+  for (j in seq_len(ncol(Y0))){ o <- scm1(Y0[, j], Y0[, -j, drop = FALSE], pre); if (is.finite(o$r)) rs <- c(rs, o$r) }
+  c(m$gap, if (length(rs)) (sum(rs >= m$r) + 1) / (length(rs) + 1) else NA) }
+
+gx <- function(m, term){ ct <- tryCatch(coeftable(m), error = function(e) NULL); if (is.null(ct) || !term %in% rownames(ct)) return(c(NA, NA, NA)); as.numeric(ct[term, c("Estimate","Std. Error","Pr(>|t|)")]) }
+
+## ---- matched donor set per treatment date (pre-date audience+words means) ----
+PAN0 <- build_panel(0L, 0L, 0)                    # baseline panel (identity, used for axis B + matching)
+MU_by_date <- lapply(TREAT_DATES, function(td){
+  covs <- PAN0[month < td, .(laud = mean(log_aud_m, na.rm = TRUE), mlogw = mean(log_words, na.rm = TRUE)), by = unit]
+  covs[, tenet := as.integer(unit %in% TRU)]; covs <- covs[is.finite(laud) & is.finite(mlogw)]
+  mo <- Match(Tr = covs$tenet, X = as.matrix(covs[, .(laud, mlogw)]), M = 3, replace = TRUE, ties = FALSE)
+  unique(c(covs$unit[mo$index.treated], covs$unit[mo$index.control])) })
+names(MU_by_date) <- as.character(TREAT_DATES)
+
+## ---- outcomes: set, metric, conditional col, zero col, mention col ----------
+OUT <- list(
+  c("Russia","score","r_score","r_score0","n_ment_r"), c("Russia","pos","r_pos","r_pos0","n_ment_r"), c("Russia","net","r_net","r_net0","n_ment_r"),
+  c("Ukraine","score","u_score","u_score0","n_ment_u"),c("Ukraine","pos","u_pos","u_pos0","n_ment_u"),c("Ukraine","net","u_net","u_net0","n_ment_u"),
+  c("Combined","score","c_score","c_score0","n_ment_r"),c("Combined","pos","c_pos","c_pos0","n_ment_r"),c("Combined","net","c_net","c_net0","n_ment_r"),
+  c("Russia","vol_pos","vol_pos_r","vol_pos_r","n_total"), c("Russia","vol_posneg","vol_posneg_r","vol_posneg_r","n_total"),
+  c("Ukraine","vol_pos","vol_pos_u","vol_pos_u","n_total"),c("Ukraine","vol_posneg","vol_posneg_u","vol_posneg_u","n_total"),
+  c("Combined","vol_pos","vol_pos_c","vol_pos_c","n_total"),c("Combined","vol_posneg","vol_posneg_c","vol_posneg_c","n_total"))
+
+## ---- fit the full 10-spec set for one (panel, date, min_ment, coding, outcome) ----
+fit_outcome <- function(pan, o, td, min_ment, coding, MU, do_scm) {
+  set <- o[1]; metric <- o[2]; ycol <- if (coding == "zero" && !grepl("^vol", metric)) o[4] else o[3]; mc <- o[5]
+  pan[, post := as.integer(month >= td)]; pan[, tp := tenet * post]
+  if (coding == "zero" || grepl("^vol", metric))      base <- pan[n_total  >= min_ment & is.finite(get(ycol)) & is.finite(log_words)]
+  else if (set == "Combined")                          base <- pan[n_ment_r >= min_ment & n_ment_u >= min_ment & is.finite(get(ycol)) & is.finite(log_words)]
+  else if (set == "Russia")                            base <- pan[n_ment_r >= min_ment & is.finite(get(ycol)) & is.finite(log_words)]
+  else                                                 base <- pan[n_ment_u >= min_ment & is.finite(get(ycol)) & is.finite(log_words)]
+  pre <- base[post == 0]; preM <- pre[unit %in% MU]; baseM <- base[unit %in% MU]
+  wcol <- if (grepl("^vol", metric)) "n_total" else if (set == "Ukraine") "n_ment_u" else "n_ment_r"
+  f1s <- as.formula(paste(ycol, "~ tenet | mfac"));                          f1c <- as.formula(paste(ycol, "~ tenet + log_words + log_aud_m | mfac"))
+  f2s <- as.formula(paste(ycol, "~ tp | unit+month"));                       f2c <- as.formula(paste(ycol, "~ tp + log_words + log_aud_m | unit+month"))
+  ff  <- function(f, d) tryCatch(feols(f, d, cluster = ~ mfac + unit), error = function(e) NULL)   # H1: two-way month+unit
+  fd  <- function(f, d) tryCatch(feols(f, d, cluster = ~ unit + month), error = function(e) NULL)  # H2: two-way unit+month
+  rows <- list(); k <- 0L
+  add <- function(spec, hyp, v) { k <<- k + 1L; rows[[k]] <<- data.table(set = set, metric = metric, hyp = hyp, spec = spec, est = v[1], se = v[2], p = v[3]) }
+  add("simple",  "H1", gx(ff(f1s, pre),   "tenet")); add("simpleM", "H1", gx(ff(f1s, preM), "tenet"))
+  add("ctrl",    "H1", gx(ff(f1c, pre),   "tenet")); add("ctrlM",   "H1", gx(ff(f1c, preM), "tenet"))
+  add("twfe",    "H2", gx(fd(f2s, base),  "tp"));    add("twfe_ctrl",  "H2", gx(fd(f2c, base),  "tp"))
+  add("twfeM",   "H2", gx(fd(f2s, baseM), "tp"));    add("twfeM_ctrl", "H2", gx(fd(f2c, baseM), "tp"))
+  if (do_scm) {
+    sc  <- scm(base, ycol, wcol, td)
+    base[, yres := get(ycol) - tryCatch(predict(feols(as.formula(paste(ycol, "~ log_words | unit+month")), base), newdata = base), error = function(e) NA_real_)]
+    scc <- scm(base, "yres", wcol, td)
+    add("scm",      "H2", c(sc[1],  NA, sc[2])); add("scm_ctrl", "H2", c(scc[1], NA, scc[2]))
+  } else { add("scm", "H2", c(NA,NA,NA)); add("scm_ctrl", "H2", c(NA,NA,NA)) }
+  rbindlist(rows)
+}
+
+fit_cell <- function(pan, td, min_ment, coding, do_scm) {
+  MU <- MU_by_date[[as.character(td)]]
+  rbindlist(lapply(OUT, function(o) fit_outcome(pan, o, td, min_ment, coding, MU, do_scm)))
+}
+
+###############################################################################
+## AXIS A -- probability mass-transfer (min_ment=5, conditional), all 3 dates
+###############################################################################
+gridA <- as.data.table(expand.grid(rus_op = 0:12, ukr_op = 0:12, shift = seq(0, 0.30, 0.025), KEEP.OUT.ATTRS = FALSE))
+cat("AXIS A cells", nrow(gridA), "x dates", length(TREAT_DATES), "cores", NC, "\n")
+runA <- function(i) {
+  pan <- build_panel(gridA$rus_op[i], gridA$ukr_op[i], gridA$shift[i])
+  rbindlist(lapply(TREAT_DATES, function(td)
+    cbind(axis = "probshift", rus_op = gridA$rus_op[i], ukr_op = gridA$ukr_op[i], shift = gridA$shift[i],
+          min_ment = MINMENT_BASE, coding = "conditional", treat_date = as.character(td),
+          fit_cell(pan, td, MINMENT_BASE, "conditional", SCM_IN_SHIFT))))
+}
+resA <- rbindlist(mclapply(seq_len(nrow(gridA)), runA, mc.cores = NC), fill = TRUE)
+cat("AXIS A rows", nrow(resA), "\n")
+
+###############################################################################
+## AXIS B/C -- min-mention {0,1,3,5,10,20} x coding {conditional,zero}, shift 0,
+##             all 3 dates, full spec set incl. SCM. (folds in old 26.)
+###############################################################################
+gridB <- CJ(min_ment = MINMENT_GRID, coding = c("conditional", "zero"), td = TREAT_DATES, sorted = FALSE)
+runB <- function(i) cbind(axis = "minment", rus_op = 0L, ukr_op = 0L, shift = 0,
+                          min_ment = gridB$min_ment[i], coding = gridB$coding[i], treat_date = as.character(gridB$td[i]),
+                          fit_cell(PAN0, gridB$td[i], gridB$min_ment[i], gridB$coding[i], TRUE))
+resB <- rbindlist(mclapply(seq_len(nrow(gridB)), runB, mc.cores = NC), fill = TRUE)
+cat("AXIS B rows", nrow(resB), "\n")
+
+###############################################################################
+## combine + label + write
+###############################################################################
+fin <- rbind(resA, resB, fill = TRUE)
 fin[, rus_op_name := OPNAME[rus_op + 1L]]; fin[, ukr_op_name := OPNAME[ukr_op + 1L]]
 fin[, sig := fifelse(is.na(p), "NA", fifelse(p < 0.01, "***", fifelse(p < 0.05, "**", fifelse(p < 0.1, "*", "ns"))))]
-setcolorder(fin, c("rus_op","rus_op_name","ukr_op","ukr_op_name","shift","treat_date","set","metric","spec","estimate","se","p","sig"))
-fwrite(fin, file.path(SC, "master_probshift_coefs.csv"))
-cat("ROWS", nrow(fin), "DONE_PROBSHIFT\n")
+setcolorder(fin, c("axis","treat_date","min_ment","coding","rus_op","rus_op_name","ukr_op","ukr_op_name","shift","set","metric","hyp","spec","est","se","p","sig"))
+fwrite(fin, file.path(SC, "master_grid_h1h2.csv"))
+cat("ROWS", nrow(fin), "-> master_grid_h1h2.csv  DONE_GRID\n")

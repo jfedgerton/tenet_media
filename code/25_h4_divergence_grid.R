@@ -39,7 +39,9 @@ al <- function(s) { v <- aud[key == norm(s), mean_audience]; if (length(v) == 0)
 units <- unique(P$unit)
 ua <- vapply(units, function(u) if (u == "tim_pool") sum(sapply(TIM, al), na.rm = TRUE) else al(u), numeric(1))
 umeta <- data.table(unit = units, mean_audience = ua); umeta[, log_aud := log(mean_audience)]
-P <- merge(P, umeta[, .(unit, log_aud)], by = "unit", all.x = TRUE)
+# time-varying monthly audience (Jon Green) -> log_aud_m, merged by unit-month (match 13/15)
+AM <- fread(file.path(COLLAB, "data", "sc_results", "audience_monthly.csv")); AM[, month := as.Date(month)]
+P <- merge(P, AM[, .(unit, month, log_aud_m = log(aud_mid))], by = c("unit", "month"), all.x = TRUE)
 cov <- aud[, .(key, mean_audience, episodes_per_week, weeks_active)]
 uc <- rbindlist(lapply(units, function(u) {
   if (u == "tim_pool") { x <- cov[key %in% norm(TIM)]; data.table(unit = u, a = sum(x$mean_audience, na.rm=T), e = mean(x$episodes_per_week, na.rm=T), w = max(x$weeks_active, na.rm=T)) }
@@ -74,16 +76,16 @@ run_arm <- function(ts, rf, ra) {
   base <- P[topicset == ts & reference == rf & rare == ra]
   out <- list(); k <- 0L
   for (meas in MEAS) {
-    d0 <- copy(base); d0[, D := get(meas)]; d0 <- d0[!is.na(D) & !is.na(log_aud)]
+    d0 <- copy(base); d0[, D := get(meas)]; d0 <- d0[!is.na(D) & is.finite(log_aud_m)]
     for (td in TREAT_DATES) {
       d0[, post := as.integer(month >= td)]; d0[, tp := tenet * post]
       pre <- d0[post == 0]; prem <- pre[unit %in% MU]
-      f1 <- D ~ tenet + t + t2 + log_aud + log_n
-      ftw <- D ~ tp + post:log_aud + log_n | unit + month
+      f1 <- D ~ tenet + t + t2 + log_aud_m + log_n
+      ftw <- D ~ tp + log_aud_m + log_n | unit + month
       add <- function(spec, v) { k <<- k + 1L; out[[k]] <<- data.table(measure=meas, reference=rf, topicset=ts, rare=ra, treat_date=as.character(td), spec=spec, estimate=v[1], se=v[2], p=v[3]) }
       add("H4a_OLS",     grabT(tryCatch(feols(f1, pre,  cluster=~unit), error=function(e) NULL), "tenet"))
       add("H4a_matched", grabT(tryCatch(feols(f1, prem, cluster=~unit), error=function(e) NULL), "tenet"))
-      add("H4b_TWFE",    grabT(tryCatch(feols(ftw, d0,  cluster=~unit), error=function(e) NULL), "tp"))
+      add("H4b_TWFE",    grabT(tryCatch(feols(ftw, d0,  cluster=~unit+month), error=function(e) NULL), "tp"))
       sc <- tryCatch(scm_outcome(d0, td), error=function(e) c(NA,NA,NA))
       add("H4b_SCM", c(sc[1], NA_real_, sc[3]))
     }
