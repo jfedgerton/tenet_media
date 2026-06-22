@@ -55,10 +55,11 @@ scm1 <- function(y1, Y0, pre){ w <- scm_w(Y0[pre, , drop = FALSE], y1[pre]); g <
   list(r = sqrt(mean(g[!pre]^2)) / sqrt(mean(g[pre]^2)), gap = mean(g[!pre])) }
 scm <- function(pan, col, wcol){
   dd <- pan[!is.na(get(col)) & month >= SCM_WIN]; tr <- dd[tenet == 1]; if (!nrow(tr)) return(c(NA, NA))
-  comp <- tr[, .(y = weighted.mean(get(col), pmax(get(wcol), 1))), by = month]; mo <- sort(unique(dd$month)); pre <- mo < TREAT
-  if (sum(pre) < 6 || sum(!pre) < 2) return(c(NA, NA)); y1 <- comp[match(mo, comp$month)]$y
+  comp <- tr[, .(y = weighted.mean(get(col), pmax(get(wcol), 1))), by = month]; mo <- sort(comp$month); pre <- mo < TREAT  # treated-observed months
+  if (sum(pre) < 6 || sum(!pre) < 2) return(c(NA, NA)); y1 <- comp$y[match(mo, comp$month)]
   don <- dcast(dd[tenet == 0], month ~ unit, value.var = col); don <- don[match(mo, don$month)]; dm <- as.matrix(don[, -1])
-  good <- which(colSums(is.na(dm)) == 0 & apply(dm, 2, sd) > 0); if (length(good) < 5 || any(is.na(y1))) return(c(NA, NA))
+  for (j in seq_len(ncol(dm))){ v <- dm[, j]; if (anyNA(v)) { v[is.na(v)] <- mean(v, na.rm = TRUE); dm[, j] <- v } }   # gap-fill donors w/ own mean
+  good <- which(apply(dm, 2, function(x) all(is.finite(x)) & sd(x) > 0)); if (length(good) < 5 || anyNA(y1)) return(c(NA, NA))
   Y0 <- dm[, good, drop = FALSE]; m <- scm1(y1, Y0, pre); rs <- c()
   for (j in seq_len(ncol(Y0))){ o <- scm1(Y0[, j], Y0[, -j, drop = FALSE], pre); if (is.finite(o$r)) rs <- c(rs, o$r) }
   c(m$gap, if (length(rs)) (sum(rs >= m$r) + 1) / (length(rs) + 1) else NA) }
@@ -152,7 +153,7 @@ h2_rs_twfe       <- feols(r_score ~ tp | unit+month, e_rs,  cluster=~unit+month)
 h2_rs_twfe_ctrl  <- feols(r_score ~ tp + log_words + log_aud_m | unit+month, e_rs,  cluster=~unit+month)
 h2_rs_twfeM      <- feols(r_score ~ tp | unit+month, em_rs, cluster=~unit+month)
 h2_rs_twfeM_ctrl <- feols(r_score ~ tp + log_words + log_aud_m | unit+month, em_rs, cluster=~unit+month)
-e_rs[, r_score_res := r_score - predict(feols(r_score ~ log_words + log_aud_m | unit+month, e_rs), newdata=e_rs)]
+e_rs[, r_score_res := r_score - predict(feols(r_score ~ log_words | unit+month,e_rs), newdata=e_rs)]
 h2_rs_scm      <- scm(e_rs, "r_score",     "n_ment_r")
 h2_rs_scm_ctrl <- scm(e_rs, "r_score_res", "n_ment_r")
 # ---- Russia pos ----
@@ -161,7 +162,7 @@ h2_rp_twfe       <- feols(r_pos ~ tp | unit+month, e_rp,  cluster=~unit+month)
 h2_rp_twfe_ctrl  <- feols(r_pos ~ tp + log_words + log_aud_m | unit+month, e_rp,  cluster=~unit+month)
 h2_rp_twfeM      <- feols(r_pos ~ tp | unit+month, em_rp, cluster=~unit+month)
 h2_rp_twfeM_ctrl <- feols(r_pos ~ tp + log_words + log_aud_m | unit+month, em_rp, cluster=~unit+month)
-e_rp[, r_pos_res := r_pos - predict(feols(r_pos ~ log_words + log_aud_m | unit+month, e_rp), newdata=e_rp)]
+e_rp[, r_pos_res := r_pos - predict(feols(r_pos ~ log_words | unit+month,e_rp), newdata=e_rp)]
 h2_rp_scm      <- scm(e_rp, "r_pos",     "n_ment_r")
 h2_rp_scm_ctrl <- scm(e_rp, "r_pos_res", "n_ment_r")
 # ---- Russia net ----
@@ -170,7 +171,7 @@ h2_rn_twfe       <- feols(r_net ~ tp | unit+month, e_rn,  cluster=~unit+month)
 h2_rn_twfe_ctrl  <- feols(r_net ~ tp + log_words + log_aud_m | unit+month, e_rn,  cluster=~unit+month)
 h2_rn_twfeM      <- feols(r_net ~ tp | unit+month, em_rn, cluster=~unit+month)
 h2_rn_twfeM_ctrl <- feols(r_net ~ tp + log_words + log_aud_m | unit+month, em_rn, cluster=~unit+month)
-e_rn[, r_net_res := r_net - predict(feols(r_net ~ log_words + log_aud_m | unit+month, e_rn), newdata=e_rn)]
+e_rn[, r_net_res := r_net - predict(feols(r_net ~ log_words | unit+month,e_rn), newdata=e_rn)]
 h2_rn_scm      <- scm(e_rn, "r_net",     "n_ment_r")
 h2_rn_scm_ctrl <- scm(e_rn, "r_net_res", "n_ment_r")
 # ---- Ukraine score ----
@@ -179,7 +180,7 @@ h2_us_twfe       <- feols(u_score ~ tp | unit+month, e_us,  cluster=~unit+month)
 h2_us_twfe_ctrl  <- feols(u_score ~ tp + log_words + log_aud_m | unit+month, e_us,  cluster=~unit+month)
 h2_us_twfeM      <- feols(u_score ~ tp | unit+month, em_us, cluster=~unit+month)
 h2_us_twfeM_ctrl <- feols(u_score ~ tp + log_words + log_aud_m | unit+month, em_us, cluster=~unit+month)
-e_us[, u_score_res := u_score - predict(feols(u_score ~ log_words + log_aud_m | unit+month, e_us), newdata=e_us)]
+e_us[, u_score_res := u_score - predict(feols(u_score ~ log_words | unit+month,e_us), newdata=e_us)]
 h2_us_scm      <- scm(e_us, "u_score",     "n_ment_u")
 h2_us_scm_ctrl <- scm(e_us, "u_score_res", "n_ment_u")
 # ---- Ukraine pos ----
@@ -188,7 +189,7 @@ h2_up_twfe       <- feols(u_pos ~ tp | unit+month, e_up,  cluster=~unit+month)
 h2_up_twfe_ctrl  <- feols(u_pos ~ tp + log_words + log_aud_m | unit+month, e_up,  cluster=~unit+month)
 h2_up_twfeM      <- feols(u_pos ~ tp | unit+month, em_up, cluster=~unit+month)
 h2_up_twfeM_ctrl <- feols(u_pos ~ tp + log_words + log_aud_m | unit+month, em_up, cluster=~unit+month)
-e_up[, u_pos_res := u_pos - predict(feols(u_pos ~ log_words + log_aud_m | unit+month, e_up), newdata=e_up)]
+e_up[, u_pos_res := u_pos - predict(feols(u_pos ~ log_words | unit+month,e_up), newdata=e_up)]
 h2_up_scm      <- scm(e_up, "u_pos",     "n_ment_u")
 h2_up_scm_ctrl <- scm(e_up, "u_pos_res", "n_ment_u")
 # ---- Ukraine net ----
@@ -197,7 +198,7 @@ h2_un_twfe       <- feols(u_net ~ tp | unit+month, e_un,  cluster=~unit+month)
 h2_un_twfe_ctrl  <- feols(u_net ~ tp + log_words + log_aud_m | unit+month, e_un,  cluster=~unit+month)
 h2_un_twfeM      <- feols(u_net ~ tp | unit+month, em_un, cluster=~unit+month)
 h2_un_twfeM_ctrl <- feols(u_net ~ tp + log_words + log_aud_m | unit+month, em_un, cluster=~unit+month)
-e_un[, u_net_res := u_net - predict(feols(u_net ~ log_words + log_aud_m | unit+month, e_un), newdata=e_un)]
+e_un[, u_net_res := u_net - predict(feols(u_net ~ log_words | unit+month,e_un), newdata=e_un)]
 h2_un_scm      <- scm(e_un, "u_net",     "n_ment_u")
 h2_un_scm_ctrl <- scm(e_un, "u_net_res", "n_ment_u")
 # ---- Combined score ----
@@ -206,7 +207,7 @@ h2_cs_twfe       <- feols(c_score ~ tp | unit+month, e_cs,  cluster=~unit+month)
 h2_cs_twfe_ctrl  <- feols(c_score ~ tp + log_words + log_aud_m | unit+month, e_cs,  cluster=~unit+month)
 h2_cs_twfeM      <- feols(c_score ~ tp | unit+month, em_cs, cluster=~unit+month)
 h2_cs_twfeM_ctrl <- feols(c_score ~ tp + log_words + log_aud_m | unit+month, em_cs, cluster=~unit+month)
-e_cs[, c_score_res := c_score - predict(feols(c_score ~ log_words + log_aud_m | unit+month, e_cs), newdata=e_cs)]
+e_cs[, c_score_res := c_score - predict(feols(c_score ~ log_words | unit+month,e_cs), newdata=e_cs)]
 h2_cs_scm      <- scm(e_cs, "c_score",     "n_ment_r")
 h2_cs_scm_ctrl <- scm(e_cs, "c_score_res", "n_ment_r")
 # ---- Combined pos ----
@@ -215,7 +216,7 @@ h2_cp_twfe       <- feols(c_pos ~ tp | unit+month, e_cp,  cluster=~unit+month)
 h2_cp_twfe_ctrl  <- feols(c_pos ~ tp + log_words + log_aud_m | unit+month, e_cp,  cluster=~unit+month)
 h2_cp_twfeM      <- feols(c_pos ~ tp | unit+month, em_cp, cluster=~unit+month)
 h2_cp_twfeM_ctrl <- feols(c_pos ~ tp + log_words + log_aud_m | unit+month, em_cp, cluster=~unit+month)
-e_cp[, c_pos_res := c_pos - predict(feols(c_pos ~ log_words + log_aud_m | unit+month, e_cp), newdata=e_cp)]
+e_cp[, c_pos_res := c_pos - predict(feols(c_pos ~ log_words | unit+month,e_cp), newdata=e_cp)]
 h2_cp_scm      <- scm(e_cp, "c_pos",     "n_ment_r")
 h2_cp_scm_ctrl <- scm(e_cp, "c_pos_res", "n_ment_r")
 # ---- Combined net ----
@@ -224,7 +225,7 @@ h2_cn_twfe       <- feols(c_net ~ tp | unit+month, e_cn,  cluster=~unit+month)
 h2_cn_twfe_ctrl  <- feols(c_net ~ tp + log_words + log_aud_m | unit+month, e_cn,  cluster=~unit+month)
 h2_cn_twfeM      <- feols(c_net ~ tp | unit+month, em_cn, cluster=~unit+month)
 h2_cn_twfeM_ctrl <- feols(c_net ~ tp + log_words + log_aud_m | unit+month, em_cn, cluster=~unit+month)
-e_cn[, c_net_res := c_net - predict(feols(c_net ~ log_words + log_aud_m | unit+month, e_cn), newdata=e_cn)]
+e_cn[, c_net_res := c_net - predict(feols(c_net ~ log_words | unit+month,e_cn), newdata=e_cn)]
 h2_cn_scm      <- scm(e_cn, "c_net",     "n_ment_r")
 h2_cn_scm_ctrl <- scm(e_cn, "c_net_res", "n_ment_r")
 
@@ -248,7 +249,7 @@ h3_rus_twfe       <- feols(prop_rus ~ tp | unit+month, f_rus,  cluster=~unit+mon
 h3_rus_twfe_ctrl  <- feols(prop_rus ~ tp + log_words + log_aud_m | unit+month, f_rus,  cluster=~unit+month)
 h3_rus_twfeM      <- feols(prop_rus ~ tp | unit+month, fm_rus, cluster=~unit+month)
 h3_rus_twfeM_ctrl <- feols(prop_rus ~ tp + log_words + log_aud_m | unit+month, fm_rus, cluster=~unit+month)
-f_rus[, prop_rus_res := prop_rus - predict(feols(prop_rus ~ log_words + log_aud_m | unit+month, f_rus), newdata=f_rus)]
+f_rus[, prop_rus_res := prop_rus - predict(feols(prop_rus ~ log_words | unit+month,f_rus), newdata=f_rus)]
 h3_rus_scm      <- scm(f_rus, "prop_rus",     "n_words")
 h3_rus_scm_ctrl <- scm(f_rus, "prop_rus_res", "n_words")
 # ---- Ukraine share ----
@@ -257,7 +258,7 @@ h3_ukr_twfe       <- feols(prop_ukr ~ tp | unit+month, f_ukr,  cluster=~unit+mon
 h3_ukr_twfe_ctrl  <- feols(prop_ukr ~ tp + log_words + log_aud_m | unit+month, f_ukr,  cluster=~unit+month)
 h3_ukr_twfeM      <- feols(prop_ukr ~ tp | unit+month, fm_ukr, cluster=~unit+month)
 h3_ukr_twfeM_ctrl <- feols(prop_ukr ~ tp + log_words + log_aud_m | unit+month, fm_ukr, cluster=~unit+month)
-f_ukr[, prop_ukr_res := prop_ukr - predict(feols(prop_ukr ~ log_words + log_aud_m | unit+month, f_ukr), newdata=f_ukr)]
+f_ukr[, prop_ukr_res := prop_ukr - predict(feols(prop_ukr ~ log_words | unit+month,f_ukr), newdata=f_ukr)]
 h3_ukr_scm      <- scm(f_ukr, "prop_ukr",     "n_words")
 h3_ukr_scm_ctrl <- scm(f_ukr, "prop_ukr_res", "n_words")
 # ---- Combined share ----
@@ -266,7 +267,7 @@ h3_comb_twfe       <- feols(prop_comb ~ tp | unit+month, f_comb,  cluster=~unit+
 h3_comb_twfe_ctrl  <- feols(prop_comb ~ tp + log_words + log_aud_m | unit+month, f_comb,  cluster=~unit+month)
 h3_comb_twfeM      <- feols(prop_comb ~ tp | unit+month, fm_comb, cluster=~unit+month)
 h3_comb_twfeM_ctrl <- feols(prop_comb ~ tp + log_words + log_aud_m | unit+month, fm_comb, cluster=~unit+month)
-f_comb[, prop_comb_res := prop_comb - predict(feols(prop_comb ~ log_words + log_aud_m | unit+month, f_comb), newdata=f_comb)]
+f_comb[, prop_comb_res := prop_comb - predict(feols(prop_comb ~ log_words | unit+month,f_comb), newdata=f_comb)]
 h3_comb_scm      <- scm(f_comb, "prop_comb",     "n_words")
 h3_comb_scm_ctrl <- scm(f_comb, "prop_comb_res", "n_words")
 
@@ -274,6 +275,31 @@ H3 <- rbindlist(list(
   r2("Russia share",   h3_rus_twfe,  h3_rus_twfe_ctrl,  h3_rus_twfeM,  h3_rus_twfeM_ctrl,  h3_rus_scm,  h3_rus_scm_ctrl),
   r2("Ukraine share",  h3_ukr_twfe,  h3_ukr_twfe_ctrl,  h3_ukr_twfeM,  h3_ukr_twfeM_ctrl,  h3_ukr_scm,  h3_ukr_scm_ctrl),
   r2("Combined share", h3_comb_twfe, h3_comb_twfe_ctrl, h3_comb_twfeM, h3_comb_twfeM_ctrl, h3_comb_scm, h3_comb_scm_ctrl)))
+
+###############################################################################
+## RANDOMIZATION INFERENCE -- honest p for the 3-treated-cluster problem.
+## For the controlled FULL spec of each outcome: reassign 'treated' to random unit
+## triples, refit the SAME model, build the null. p_RI_ctrl added to each table.
+###############################################################################
+RI_B <- 999
+ri_lvl <- function(d, ycol){ d <- copy(d); u <- unique(d$unit); nt <- length(intersect(u, TRU))
+  f <- as.formula(paste0(ycol, " ~ tnt + log_words + log_aud_m | mfac"))
+  d[, tnt := as.integer(unit %in% TRU)]; real <- coef(feols(f, d))["tnt"]
+  bs <- replicate(RI_B, { d[, tnt := as.integer(unit %in% sample(u, nt))]; tryCatch(coef(feols(f, d))["tnt"], error = function(e) NA_real_) })
+  round((1 + sum(abs(bs) >= abs(real), na.rm = TRUE)) / (1 + sum(is.finite(bs))), 4) }
+ri_did <- function(d, ycol){ d <- copy(d); u <- unique(d$unit); nt <- length(intersect(u, TRU))
+  f <- as.formula(paste0(ycol, " ~ tnp + log_words + log_aud_m | unit+month"))
+  d[, tnp := as.integer(unit %in% TRU) * post]; real <- coef(feols(f, d))["tnp"]
+  bs <- replicate(RI_B, { d[, tnp := as.integer(unit %in% sample(u, nt)) * post]; tryCatch(coef(feols(f, d))["tnp"], error = function(e) NA_real_) })
+  round((1 + sum(abs(bs) >= abs(real), na.rm = TRUE)) / (1 + sum(is.finite(bs))), 4) }
+
+H1[, p_RI_ctrl := c(ri_lvl(d_rs,"r_score"), ri_lvl(d_rp,"r_pos"), ri_lvl(d_rn,"r_net"),
+                    ri_lvl(d_us,"u_score"), ri_lvl(d_up,"u_pos"), ri_lvl(d_un,"u_net"),
+                    ri_lvl(d_cs,"c_score"), ri_lvl(d_cp,"c_pos"), ri_lvl(d_cn,"c_net"))]
+H2[, p_RI_ctrl := c(ri_did(e_rs,"r_score"), ri_did(e_rp,"r_pos"), ri_did(e_rn,"r_net"),
+                    ri_did(e_us,"u_score"), ri_did(e_up,"u_pos"), ri_did(e_un,"u_net"),
+                    ri_did(e_cs,"c_score"), ri_did(e_cp,"c_pos"), ri_did(e_cn,"c_net"))]
+H3[, p_RI_ctrl := c(ri_did(f_rus,"prop_rus"), ri_did(f_ukr,"prop_ukr"), ri_did(f_comb,"prop_comb"))]
 
 ## ---- show & save ------------------------------------------------------------
 cat("\n===== H1 (pre-payment level) =====\n"); print(H1)

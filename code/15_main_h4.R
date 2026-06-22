@@ -47,10 +47,11 @@ scm1 <- function(y1, Y0, pre){ w <- scm_w(Y0[pre, , drop = FALSE], y1[pre]); g <
   list(r = sqrt(mean(g[!pre]^2)) / sqrt(mean(g[pre]^2)), gap = mean(g[!pre])) }
 scm <- function(pan, col){
   dd <- pan[!is.na(get(col)) & month >= SCM_WIN]; tr <- dd[tenet == 1]; if (!nrow(tr)) return(c(NA, NA))
-  comp <- tr[, .(y = weighted.mean(get(col), pmax(n_sentences, 1))), by = month]; mo <- sort(unique(dd$month)); pre <- mo < TREAT
-  if (sum(pre) < 6 || sum(!pre) < 2) return(c(NA, NA)); y1 <- comp[match(mo, comp$month)]$y
+  comp <- tr[, .(y = weighted.mean(get(col), pmax(n_sentences, 1))), by = month]; mo <- sort(comp$month); pre <- mo < TREAT  # treated-observed months
+  if (sum(pre) < 6 || sum(!pre) < 2) return(c(NA, NA)); y1 <- comp$y[match(mo, comp$month)]
   don <- dcast(dd[tenet == 0], month ~ unit, value.var = col); don <- don[match(mo, don$month)]; dm <- as.matrix(don[, -1])
-  good <- which(colSums(is.na(dm)) == 0 & apply(dm, 2, sd) > 0); if (length(good) < 5 || any(is.na(y1))) return(c(NA, NA))
+  for (j in seq_len(ncol(dm))){ v <- dm[, j]; if (anyNA(v)) { v[is.na(v)] <- mean(v, na.rm = TRUE); dm[, j] <- v } }   # gap-fill donors w/ own mean
+  good <- which(apply(dm, 2, function(x) all(is.finite(x)) & sd(x) > 0)); if (length(good) < 5 || anyNA(y1)) return(c(NA, NA))
   Y0 <- dm[, good, drop = FALSE]; m <- scm1(y1, Y0, pre); rs <- c()
   for (j in seq_len(ncol(Y0))){ o <- scm1(Y0[, j], Y0[, -j, drop = FALSE], pre); if (is.finite(o$r)) rs <- c(rs, o$r) }
   c(m$gap, if (length(rs)) (sum(rs >= m$r) + 1) / (length(rs) + 1) else NA) }
@@ -99,7 +100,7 @@ h4b_jsd_twfe       <- feols(jsd ~ tp | unit+month, b_j,  cluster=~unit+month)
 h4b_jsd_twfe_ctrl  <- feols(jsd ~ tp + log_words + log_aud_m | unit+month, b_j,  cluster=~unit+month)
 h4b_jsd_twfeM      <- feols(jsd ~ tp | unit+month, bm_j, cluster=~unit+month)
 h4b_jsd_twfeM_ctrl <- feols(jsd ~ tp + log_words + log_aud_m | unit+month, bm_j, cluster=~unit+month)
-b_j[, jsd_res := jsd - predict(feols(jsd ~ log_words + log_aud_m | unit+month, b_j), newdata=b_j)]
+b_j[, jsd_res := jsd - predict(feols(jsd ~ log_words | unit+month,b_j), newdata=b_j)]
 h4b_jsd_scm      <- scm(b_j, "jsd")
 h4b_jsd_scm_ctrl <- scm(b_j, "jsd_res")
 # ---- KL ----
@@ -108,7 +109,7 @@ h4b_kl_twfe       <- feols(kl_sm ~ tp | unit+month, b_k,  cluster=~unit+month)
 h4b_kl_twfe_ctrl  <- feols(kl_sm ~ tp + log_words + log_aud_m | unit+month, b_k,  cluster=~unit+month)
 h4b_kl_twfeM      <- feols(kl_sm ~ tp | unit+month, bm_k, cluster=~unit+month)
 h4b_kl_twfeM_ctrl <- feols(kl_sm ~ tp + log_words + log_aud_m | unit+month, bm_k, cluster=~unit+month)
-b_k[, kl_res := kl_sm - predict(feols(kl_sm ~ log_words + log_aud_m | unit+month, b_k), newdata=b_k)]
+b_k[, kl_res := kl_sm - predict(feols(kl_sm ~ log_words | unit+month,b_k), newdata=b_k)]
 h4b_kl_scm      <- scm(b_k, "kl_sm")
 h4b_kl_scm_ctrl <- scm(b_k, "kl_res")
 # ---- cosine ----
@@ -117,7 +118,7 @@ h4b_cos_twfe       <- feols(cosine ~ tp | unit+month, b_c,  cluster=~unit+month)
 h4b_cos_twfe_ctrl  <- feols(cosine ~ tp + log_words + log_aud_m | unit+month, b_c,  cluster=~unit+month)
 h4b_cos_twfeM      <- feols(cosine ~ tp | unit+month, bm_c, cluster=~unit+month)
 h4b_cos_twfeM_ctrl <- feols(cosine ~ tp + log_words + log_aud_m | unit+month, bm_c, cluster=~unit+month)
-b_c[, cos_res := cosine - predict(feols(cosine ~ log_words + log_aud_m | unit+month, b_c), newdata=b_c)]
+b_c[, cos_res := cosine - predict(feols(cosine ~ log_words | unit+month,b_c), newdata=b_c)]
 h4b_cos_scm      <- scm(b_c, "cosine")
 h4b_cos_scm_ctrl <- scm(b_c, "cos_res")
 
@@ -125,6 +126,23 @@ H4b <- rbindlist(list(
   r2("JSD",    h4b_jsd_twfe, h4b_jsd_twfe_ctrl, h4b_jsd_twfeM, h4b_jsd_twfeM_ctrl, h4b_jsd_scm, h4b_jsd_scm_ctrl),
   r2("KL",     h4b_kl_twfe,  h4b_kl_twfe_ctrl,  h4b_kl_twfeM,  h4b_kl_twfeM_ctrl,  h4b_kl_scm,  h4b_kl_scm_ctrl),
   r2("cosine", h4b_cos_twfe, h4b_cos_twfe_ctrl, h4b_cos_twfeM, h4b_cos_twfeM_ctrl, h4b_cos_scm, h4b_cos_scm_ctrl)))
+
+###############################################################################
+## RANDOMIZATION INFERENCE (controlled FULL spec) -- 3-treated-cluster honest p.
+###############################################################################
+RI_B <- 999
+ri_lvl <- function(d, ycol){ d <- copy(d); u <- unique(d$unit); nt <- length(intersect(u, TRU))
+  f <- as.formula(paste0(ycol, " ~ tnt + log_words + log_aud_m | mfac"))
+  d[, tnt := as.integer(unit %in% TRU)]; real <- coef(feols(f, d))["tnt"]
+  bs <- replicate(RI_B, { d[, tnt := as.integer(unit %in% sample(u, nt))]; tryCatch(coef(feols(f, d))["tnt"], error = function(e) NA_real_) })
+  round((1 + sum(abs(bs) >= abs(real), na.rm = TRUE)) / (1 + sum(is.finite(bs))), 4) }
+ri_did <- function(d, ycol){ d <- copy(d); u <- unique(d$unit); nt <- length(intersect(u, TRU))
+  f <- as.formula(paste0(ycol, " ~ tnp + log_words + log_aud_m | unit+month"))
+  d[, tnp := as.integer(unit %in% TRU) * post]; real <- coef(feols(f, d))["tnp"]
+  bs <- replicate(RI_B, { d[, tnp := as.integer(unit %in% sample(u, nt)) * post]; tryCatch(coef(feols(f, d))["tnp"], error = function(e) NA_real_) })
+  round((1 + sum(abs(bs) >= abs(real), na.rm = TRUE)) / (1 + sum(is.finite(bs))), 4) }
+H4a[, p_RI_ctrl := c(ri_lvl(a_j,"jsd"), ri_lvl(a_k,"kl_sm"), ri_lvl(a_c,"cosine"))]
+H4b[, p_RI_ctrl := c(ri_did(b_j,"jsd"), ri_did(b_k,"kl_sm"), ri_did(b_c,"cosine"))]
 
 ## ---- show & save ------------------------------------------------------------
 cat("\n===== H4a (pre-payment divergence level) =====\n"); print(H4a)
