@@ -134,4 +134,17 @@ try:
 except FileNotFoundError as e:
     print("AUDIENCE skipped (episode file not found):", e)
 
+# ---------- total-words volume (all-topic sentence counts) -> loso_volume.csv ----------
+# Time-varying volume control consumed by 13/23/26 (19_loso_panel rebuilds the same per-feed).
+try:
+    cw = pd.read_parquet(COLLAB + "/data/corpus_with_topics.parquet", columns=["show", "date", "topic"])
+    cw["date"] = pd.to_datetime(cw["date"], errors="coerce")
+    cw = cw[(cw["date"] >= START) & (cw["date"] < TRUNC) & (cw["topic"] != -1)]
+    cw["month"] = cw["date"].values.astype("datetime64[M]")
+    vol = cw.groupby(["show", "month"]).size().reset_index(name="n_sent_total")
+    vol.to_csv(SC + "/loso_volume.csv", index=False)
+    print("LOSO_VOLUME rows", len(vol))
+except FileNotFoundError as e:
+    print("VOLUME skipped (corpus_with_topics not found):", e)
+
 print("BUILD_DONE")

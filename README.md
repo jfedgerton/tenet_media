@@ -35,9 +35,9 @@ ordinal. **Combined** = Russia − Ukraine (anti-Ukraine ≈ pro-Russia). The ea
 
 ## Pipeline (article order)
 
-Files live in `code/`. Steps `01`–`10` are the data/measurement construction (HPC/SLURM);
-the stance-labeling block (`11`) lives in `code/archive/labeling/`; `13`+ is the R analysis
-layer. **(todo)** = not yet written.
+Files live in `code/`. Steps `01`–`11` are the data → topic → stance-labeling construction
+(HPC/SLURM); `12` builds the panels; `13`+ is the R analysis layer. Multi-script steps use
+letter suffixes (e.g. `10a–10e`, `11a–11e`). **(todo)** = not yet written.
 
 | # | Script | What it runs |
 |---|--------|--------------|
@@ -45,13 +45,13 @@ layer. **(todo)** = not yet written.
 | 02 | `02_download_audio.py`, `02_transcribe_missing.sbatch` | Download episode audio |
 | 03 | `03_create_key.py` / `.R` | Episode ↔ show key |
 | 04 | `04_transcribe.py` | Whisper ASR → transcripts |
-| 05 | `05_build_corpus.py` (+ `05_build_corpus_shard.*`, `05_merge_corpus.*`) | Sentence corpus: build → shard → merge |
+| 05 | `05_build_corpus_shard.*` → `05_merge_corpus.*` | Sentence corpus: sharded build → merge |
 | 06 | `06_topic_model.py` | BERTopic over the corpus |
 | 07 | `07_identify_russia_topics.*` | Flag the Russia/Ukraine topics (78, 79) |
 | 08 | `08_merge_corpus_topics.*` | Attach topic IDs to every sentence → `corpus_with_topics.parquet` |
 | 09 | `09_sample_validation.*` | Draw the human-coding sample (1,500) |
 | 10 | `10a–10e_validation_*.*` | Human coding / inter-coder agreement on the stance labels |
-| 11 | stance labeling — `code/archive/labeling/` | Codebook LLM labels → fine-tune RoBERTa to 4-class stance → infer over topic-78/79 sentences (archived block) |
+| 11 | `11a_codebook_label` → `11b_bert_build_data` → `11c_bert_train_infer` → `11d_bert_aggregate` → `11e_merge_preds` | **Stance labeling**: codebook LLM labels (`11a`, `full_opus_patched`) → BERT trainset → fine-tune RoBERTa to 4-class stance + infer over topic-78/79 sentences → merge → `opus_c0_corpus_labeled.parquet` |
 | 12 | `12_build_panels.py` | show × month stance + volume panels **+ `audience_monthly.csv`** (monthly audience) |
 | 13 | `13_main_h1h3.R` | **Main H1/H2/H3** — Russia/Ukraine/Combined × score/pos/net; H1 FE + matched-FE, H2/H3 TWFE + SCM |
 | 14 | `14_h4_topic_model.py` (+ `14_h4_tfidf_clean.py`) | H4 agenda-divergence panel + distinctive-topic TF-IDF |
