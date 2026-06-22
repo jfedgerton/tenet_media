@@ -184,6 +184,45 @@ if (!is.null(scC) && nrow(scC)){
          title = "Synthetic-control fit: treated composite vs. synthetic counterfactual") + theme_pub
   ggsave(file.path(SC, "figC_sc_trajectory.pdf"), pC, width = 9, height = 4)
 }
+
+###############################################################################
+## FIGURE I (APPENDIX): parallel trends across estimators -- 3 rows x 4 cols.
+##   Rows = TWFE (all controls) / Matched controls / Synthetic control counterfactual
+##   Cols = the four main outcomes. Each panel: treated composite vs counterfactual.
+##   Pre-payment overlap supports parallel trends for each estimator.
+###############################################################################
+PTO <- list(
+  list("Russia positive rate",      P, "r_pos",     "n_ment_r",    quote(n_ment_r >= MINMENT)),
+  list("Combined positive rate",    P, "c_pos",     "n_ment_r",    quote(n_ment_r >= MINMENT & n_ment_u >= MINMENT)),
+  list("Combined topic proportion", P, "prop_comb", "n_words",     quote(TRUE)),
+  list("JS divergence",             H, "jsd",       "n_sentences", quote(TRUE)))
+build_pt <- function(o){ lab <- o[[1]]; dat <- o[[2]]; y <- o[[3]]; w <- o[[4]]; flt <- o[[5]]
+  d <- dat[eval(flt, dat) & is.finite(get(y)) & is.finite(get(w)) & month >= SCM_WIN]
+  trt <- d[tenet == 1, .(Treated = weighted.mean(get(y), pmax(get(w), 1))), by = month]
+  ctl <- d[tenet == 0, .(cf = weighted.mean(get(y), pmax(get(w), 1))), by = month]
+  mch <- d[tenet == 0 & unit %in% matched_units, .(cf = weighted.mean(get(y), pmax(get(w), 1))), by = month]
+  sp  <- scm_path(dat, y, w)
+  mk <- function(cf, est){ m <- merge(trt, cf, by = "month", all = TRUE)
+    melt(m, id.vars = "month", variable.name = "series", value.name = "value")[, `:=`(estimator = est, outcome = lab)][] }
+  rbind(mk(ctl, "TWFE (all controls)"), mk(mch, "Matched controls"),
+        if (!is.null(sp)) mk(sp[, .(month, cf = synth)], "Synthetic control")) }
+FI <- rbindlist(lapply(PTO, build_pt))
+FI[, series := factor(series, levels = c("Treated", "cf"), labels = c("Treated", "Counterfactual"))]
+FI[, estimator := factor(estimator, levels = c("TWFE (all controls)", "Matched controls", "Synthetic control"))]
+FI[, outcome := factor(outcome, levels = sapply(PTO, `[[`, 1))]
+fwrite(FI, file.path(SC, "figI_parallel_data.csv"))
+pI <- ggplot(FI, aes(month, value, colour = series, linetype = series)) +
+  geom_vline(xintercept = as.numeric(TREAT), linetype = 2, colour = "grey55") +
+  geom_line(linewidth = 0.6, na.rm = TRUE) +
+  facet_wrap(~ estimator + outcome, nrow = 3, scales = "free_y", labeller = labeller(.multi_line = FALSE)) +
+  scale_colour_manual(values = c("Treated" = ACCENT, "Counterfactual" = "#0072B2")) +
+  scale_linetype_manual(values = c("Treated" = 1, "Counterfactual" = 2)) +
+  scale_x_date(date_labels = "%y") +
+  labs(x = NULL, y = "Outcome", colour = NULL, linetype = NULL,
+       title = "Parallel trends: treated vs. counterfactual under TWFE, matching, and synthetic control",
+       subtitle = "Rows = estimator, columns = outcome. Pre-payment overlap supports parallel trends (dashed line = Oct 2023).") +
+  theme_pub
+ggsave(file.path(SC, "figI_parallel.pdf"), pI, width = 13, height = 8)
 ###############################################################################
 ## EXPLORATORY (pick one for the manuscript): per-show Russia/Combined positivity
 ##   figD_lollipop    -- the 3 Tenet shows vs control reference levels (lollipop)
