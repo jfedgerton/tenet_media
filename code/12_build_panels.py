@@ -111,14 +111,20 @@ def nrm(x): return re.sub(r"[^a-z0-9]", "", str(x).lower())
 SHOWDATA = COLLAB + "/data/show_data"
 try:
     ep = pd.read_csv(SHOWDATA + "/tenet_block_episode_metadata.csv",
-                     usecols=["podcast_id_dd", "episode_airdate", "audience_lwr", "audience_upr", "audience_midpoint"])
-    stt = pd.read_csv(SHOWDATA + "/treated_terminal_blocks_weightedDecay.csv")
+                     usecols=["podcast_id_dd", "episode_airdate", "audience_lwr", "audience_upr", "audience_midpoint"],
+                     low_memory=False)
+    stt = pd.read_csv(SHOWDATA + "/treated_terminal_blocks_weightedDecay.csv", low_memory=False)
     units = sorted(set(df["unit"]))
     keymap = {nrm(u): u for u in units}
     for t in TIM:
         keymap[nrm(t)] = "tim_pool"                       # the 3 Tim feeds -> tim_pool
     stt["ukey"] = stt["title"].map(lambda s: keymap.get(nrm(s)))
-    id2unit = stt.dropna(subset=["ukey"])[["podcast_id_dd", "ukey"]].drop_duplicates()
+    id2unit = stt.dropna(subset=["ukey"])[["podcast_id_dd", "ukey"]].copy()
+    # coerce the merge key to a common numeric dtype: the static file has a mixed-type
+    # column that otherwise parses podcast_id_dd inconsistently -> ~76 silent merge misses.
+    id2unit["podcast_id_dd"] = pd.to_numeric(id2unit["podcast_id_dd"], errors="coerce")
+    id2unit = id2unit.dropna(subset=["podcast_id_dd"]).drop_duplicates()
+    ep["podcast_id_dd"] = pd.to_numeric(ep["podcast_id_dd"], errors="coerce")
     ep = ep.merge(id2unit, on="podcast_id_dd", how="inner")
     ep["airdate"] = pd.to_datetime(ep["episode_airdate"].astype(str).str[:10], errors="coerce")
     ep = ep.dropna(subset=["airdate"])

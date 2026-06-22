@@ -63,15 +63,13 @@ P[, prop_rus  := n_ment_r / n_words]
 P[, prop_ukr  := n_ment_u / n_words]
 P[, prop_comb := (n_ment_r + n_ment_u) / n_words]
 
-## ---- static listenership only for Mahalanobis matching covariates -----------
-aud <- fread(file.path(CO, "data", "show_data", "treated_terminal_blocks_weightedDecay.csv"))
-aud[, key := norm(title)]; aud <- aud[!is.na(mean_audience)]
-al <- function(s){ v <- aud[key == norm(s), mean_audience]; if (length(v)) v[1] else NA_real_ }
-units <- unique(P$unit)
-unit_aud <- sapply(units, function(u) if (u == "tim_pool") sum(sapply(TIM, al), na.rm = TRUE) else al(u))
-covs <- data.table(unit = units, laud = log(unit_aud))
-covs <- merge(covs, P[, .(mlogw = mean(log_words, na.rm = TRUE)), by = unit], by = "unit")
-covs[, tenet := as.integer(unit %in% TRU)]; covs <- covs[is.finite(laud) & is.finite(mlogw)]
+## ---- Mahalanobis matching covariates from the TIME-VARYING monthly audience ----
+## (the static treated_terminal_blocks file is no longer used). Per unit: pre-payment
+## mean log monthly audience + pre-payment mean log words.
+covs <- P[month < TREAT, .(laud = mean(log_aud_m, na.rm = TRUE),
+                           mlogw = mean(log_words, na.rm = TRUE)), by = unit]
+covs[, tenet := as.integer(unit %in% TRU)]
+covs <- covs[is.finite(laud) & is.finite(mlogw)]
 mout <- Match(Tr = covs$tenet, X = as.matrix(covs[, .(laud, mlogw)]), M = 3, replace = TRUE, ties = FALSE)
 matched_units <- unique(c(covs$unit[mout$index.treated], covs$unit[mout$index.control]))
 
