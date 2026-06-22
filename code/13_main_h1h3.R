@@ -276,32 +276,6 @@ H3 <- rbindlist(list(
   r2("Ukraine share",  h3_ukr_twfe,  h3_ukr_twfe_ctrl,  h3_ukr_twfeM,  h3_ukr_twfeM_ctrl,  h3_ukr_scm,  h3_ukr_scm_ctrl),
   r2("Combined share", h3_comb_twfe, h3_comb_twfe_ctrl, h3_comb_twfeM, h3_comb_twfeM_ctrl, h3_comb_scm, h3_comb_scm_ctrl)))
 
-###############################################################################
-## RANDOMIZATION INFERENCE -- DISABLED (kept for reviewers only).
-## The 3-treated-cluster permutation null is very wide (only C(n,3) reassignments,
-## so the RI p's run ~0.24-0.70 even where the analytic clustered p < 0.01). We do
-## NOT report it as the inference; clustered SEs are the headline. To re-enable for
-## a revision, uncomment the block below -- it appends p_RI_ctrl to H1/H2/H3.
-###############################################################################
-# RI_B <- 999
-# ri_lvl <- function(d, ycol){ d <- copy(d); u <- unique(d$unit); nt <- length(intersect(u, TRU))
-#   f <- as.formula(paste0(ycol, " ~ tnt + log_words + log_aud_m | mfac"))
-#   d[, tnt := as.integer(unit %in% TRU)]; real <- coef(feols(f, d))["tnt"]
-#   bs <- replicate(RI_B, { d[, tnt := as.integer(unit %in% sample(u, nt))]; tryCatch(coef(feols(f, d))["tnt"], error = function(e) NA_real_) })
-#   round((1 + sum(abs(bs) >= abs(real), na.rm = TRUE)) / (1 + sum(is.finite(bs))), 4) }
-# ri_did <- function(d, ycol){ d <- copy(d); u <- unique(d$unit); nt <- length(intersect(u, TRU))
-#   f <- as.formula(paste0(ycol, " ~ tnp + log_words + log_aud_m | unit+month"))
-#   d[, tnp := as.integer(unit %in% TRU) * post]; real <- coef(feols(f, d))["tnp"]
-#   bs <- replicate(RI_B, { d[, tnp := as.integer(unit %in% sample(u, nt)) * post]; tryCatch(coef(feols(f, d))["tnp"], error = function(e) NA_real_) })
-#   round((1 + sum(abs(bs) >= abs(real), na.rm = TRUE)) / (1 + sum(is.finite(bs))), 4) }
-# H1[, p_RI_ctrl := c(ri_lvl(d_rs,"r_score"), ri_lvl(d_rp,"r_pos"), ri_lvl(d_rn,"r_net"),
-#                     ri_lvl(d_us,"u_score"), ri_lvl(d_up,"u_pos"), ri_lvl(d_un,"u_net"),
-#                     ri_lvl(d_cs,"c_score"), ri_lvl(d_cp,"c_pos"), ri_lvl(d_cn,"c_net"))]
-# H2[, p_RI_ctrl := c(ri_did(e_rs,"r_score"), ri_did(e_rp,"r_pos"), ri_did(e_rn,"r_net"),
-#                     ri_did(e_us,"u_score"), ri_did(e_up,"u_pos"), ri_did(e_un,"u_net"),
-#                     ri_did(e_cs,"c_score"), ri_did(e_cp,"c_pos"), ri_did(e_cn,"c_net"))]
-# H3[, p_RI_ctrl := c(ri_did(f_rus,"prop_rus"), ri_did(f_ukr,"prop_ukr"), ri_did(f_comb,"prop_comb"))]
-
 ## ---- show & save ------------------------------------------------------------
 cat("\n===== H1 (pre-payment level) =====\n"); print(H1)
 cat("\n===== H2 (post-payment stance DiD) =====\n"); print(H2)
