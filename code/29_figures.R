@@ -223,10 +223,10 @@ pI <- ggplot(FI, aes(month, value, colour = series, linetype = series)) +
   scale_x_date(date_labels = "%y") +
   labs(x = NULL, y = "Outcome (centred on pre-payment mean)", colour = NULL, linetype = NULL,
        title = "Parallel trends: treated vs. counterfactual, centred on the pre-payment mean") +
-  theme_pub + theme(strip.text = element_text(size = 8))
+  theme_pub + theme(strip.text = element_text(size = 10))
 pI <- pI + if (requireNamespace("ggh4x", quietly = TRUE))
   ggh4x::facet_grid2(estimator ~ outcome, scales = "free", independent = "y") else
-  facet_wrap(~ estimator + outcome, nrow = 3, scales = "free_y", labeller = label_wrap_gen(width = 16, multi_line = TRUE))
+  facet_grid(estimator ~ outcome, scales = "free_y")
 ggsave(file.path(SC, "figI_parallel.pdf"), pI, width = 12, height = 7.5)
 ###############################################################################
 ## EXPLORATORY (pick one for the manuscript): per-show Russia/Combined positivity
