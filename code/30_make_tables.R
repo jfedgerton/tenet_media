@@ -10,10 +10,10 @@
 # Standard regression-table style via fixest::etable (rows = variables incl.
 # controls; columns = specification x dependent variable). Seed 123. PI: Jared Edgerton.
 ###############################################################################
-suppressMessages({ library(data.table); library(fixest); library(Matching) })
+suppressMessages({ library(data.table); library(fixest); library(Matching); library(quadprog) })
 set.seed(123)
 CO <- "/storage/group/LiberalArts/default/jfe4_collab/podcast"; SC <- file.path(CO, "data", "sc_results")
-TREAT <- as.Date("2023-10-01"); TRUNC <- as.Date("2024-09-01"); MINMENT <- 5
+TREAT <- as.Date("2023-10-01"); TRUNC <- as.Date("2024-09-01"); SCM_WIN <- as.Date("2021-01-01"); MINMENT <- 5
 TIM <- c("timcast_irl", "tim_pool_daily_news", "the_culture_war_podcast_with_tim_pool")
 TRU <- c("tim_pool", "the_benny_show", "the_rubin_report")
 
@@ -50,13 +50,11 @@ srow <- function(lbl, x){ x <- x[is.finite(x)]
   paste(lbl, fN(length(x)), f3(mean(x)), f3(sd(x)), f3(min(x)), f3(max(x)), sep = " & ") }
 GRP <- function(g) paste0("\\addlinespace[2pt]\\multicolumn{6}{l}{\\textit{", g, "}} \\\\")
 body1 <- c(
-  GRP("Dependent variables -- Russia/Ukraine stance"),
-  srow("\\quad Russia: score",  P$r_score), srow("\\quad Russia: positive", P$r_pos), srow("\\quad Russia: net", P$r_net),
-  srow("\\quad Ukraine: score", P$u_score), srow("\\quad Ukraine: positive",P$u_pos), srow("\\quad Ukraine: net",P$u_net),
-  srow("\\quad Combined: score",P$c_score), srow("\\quad Combined: positive",P$c_pos), srow("\\quad Combined: net",P$c_net),
-  GRP("Dependent variables -- agenda \\& divergence"),
-  srow("\\quad Russia topic share",  P$prop_rus), srow("\\quad Ukraine topic share", P$prop_ukr), srow("\\quad Combined topic share", P$prop_comb),
-  srow("\\quad Agenda divergence (JSD)", H$jsd), srow("\\quad Agenda divergence (KL)", H$kl_sm), srow("\\quad Agenda divergence (Cosine)", H$cosine),
+  GRP("Dependent variables (main outcomes)"),
+  srow("\\quad Russia positive rate",      P$r_pos),
+  srow("\\quad Combined positive rate",    P$c_pos),
+  srow("\\quad Combined topic proportion", P$prop_comb),
+  srow("\\quad JS divergence",             H$jsd),
   GRP("Independent variables"),
   srow("\\quad Treated (Tenet)", P$tenet), srow("\\quad Post-payment", P$post),
   srow("\\quad Log words", P$log_words), srow("\\quad Log audience", P$log_aud_m))
@@ -107,14 +105,48 @@ etx(c(h1specs("r_pos", RUS), h1specs("c_pos", BOTH)),
     "tab:h1", "table2_h1.tex")
 
 ###############################################################################
-## TABLE 3 -- omnibus DiD, MAIN outcomes (controls spec, full sample):
-##   H2 Russia positive, H2 Combined positive, H3 Combined topic share, H4 JSD.
+## TABLE 3 -- DiD across SPECIFICATIONS (TWFE / Matched / Synthetic control)
+##   to show the post-payment effect is null and inconsistent across estimators.
+##   Main outcomes: H2 Russia+, H2 Combined+, H3 Combined topic share, H4 JSD.
 ###############################################################################
-etx(list(didf("r_pos", P, RUS), didf("c_pos", P, BOTH), didf("prop_comb", P, ALL), didf("jsd", H, ALL)),
-    list("^Hypothesis" = c("H2 amplification" = 2, "H3 agenda" = 1, "H4 divergence" = 1),
-         "^Outcome"     = c("Russia positive", "Combined positive", "Combined topic share", "JS divergence")),
-    "Post-payment difference-in-differences, main outcomes. Treated $\\times$ Post; unit and month FE; SE clustered by unit and month.",
-    "tab:did_main", "table3_did_all.tex")
+scm_w <- function(Y0p, y1p){ n <- ncol(Y0p); D <- t(Y0p) %*% Y0p + diag(1e-8, n); dv <- as.vector(t(Y0p) %*% y1p)
+  A <- cbind(rep(1, n), diag(n)); b <- c(1, rep(0, n)); tryCatch(solve.QP(D, dv, A, b, meq = 1)$solution, error = function(e) rep(1/n, n)) }
+scm1 <- function(y1, Y0, pre){ w <- scm_w(Y0[pre, , drop = FALSE], y1[pre]); g <- y1 - as.vector(Y0 %*% w)
+  list(r = sqrt(mean(g[!pre]^2)) / sqrt(mean(g[pre]^2)), gap = mean(g[!pre])) }
+scm <- function(pan, col, wcol){
+  dd <- pan[!is.na(get(col)) & month >= SCM_WIN]; tr <- dd[tenet == 1]; if (!nrow(tr)) return(c(NA, NA))
+  comp <- tr[, .(y = weighted.mean(get(col), pmax(get(wcol), 1))), by = month]; mo <- sort(comp$month); pre <- mo < TREAT
+  if (sum(pre) < 6 || sum(!pre) < 2) return(c(NA, NA)); y1 <- comp$y[match(mo, comp$month)]
+  don <- dcast(dd[tenet == 0], month ~ unit, value.var = col); don <- don[match(mo, don$month)]; dm <- as.matrix(don[, -1])
+  for (j in seq_len(ncol(dm))){ v <- dm[, j]; if (anyNA(v)) { v[is.na(v)] <- mean(v, na.rm = TRUE); dm[, j] <- v } }
+  good <- which(apply(dm, 2, function(x) all(is.finite(x)) & sd(x) > 0)); if (length(good) < 5 || anyNA(y1)) return(c(NA, NA))
+  Y0 <- dm[, good, drop = FALSE]; m <- scm1(y1, Y0, pre); rs <- c()
+  for (j in seq_len(ncol(Y0))){ o <- scm1(Y0[, j], Y0[, -j, drop = FALSE], pre); if (is.finite(o$r)) rs <- c(rs, o$r) }
+  c(m$gap, if (length(rs)) (sum(rs >= m$r) + 1) / (length(rs) + 1) else NA) }
+gtp <- function(m){ ct <- coeftable(m); if ("tp" %in% rownames(ct)) as.numeric(ct["tp", c("Estimate", "Pr(>|t|)")]) else c(NA, NA) }
+
+OUTS <- list(list("Russia positive", "r_pos", P, RUS, "n_ment_r"),
+             list("Combined positive", "c_pos", P, BOTH, "n_ment_r"),
+             list("Combined topic share", "prop_comb", P, ALL, "n_words"),
+             list("JS divergence", "jsd", H, ALL, "n_sentences"))
+EST <- lapply(OUTS, function(o){ mm <- didm(o[[2]], o[[3]], o[[4]])
+  dd <- o[[3]][eval(o[[4]], o[[3]])]
+  list(tw = gtp(mm$full), twm = gtp(mm$matched), sc = scm(dd, o[[2]], o[[5]])) })
+star <- function(p) ifelse(is.na(p), "", ifelse(p < .01, "***", ifelse(p < .05, "**", ifelse(p < .10, "*", ""))))
+fe2  <- function(x) ifelse(is.na(x[1]), "", sprintf("%.3f%s", x[1], star(x[2])))
+fp2  <- function(x) ifelse(is.na(x[2]), "", ifelse(x[2] < .001, "($<$.001)", sprintf("(%.3f)", x[2])))
+spec_rows <- function(lbl, key){
+  est <- vapply(EST, function(e) fe2(e[[key]]), ""); pv <- vapply(EST, function(e) fp2(e[[key]]), "")
+  c(paste0(lbl, " & ", paste(est, collapse = " & "), " \\\\"), paste0(" & ", paste(pv, collapse = " & "), " \\\\[2pt]")) }
+hdr3 <- paste0(" & ", paste(vapply(OUTS, function(o) o[[1]], ""), collapse = " & "), " \\\\")
+tab3 <- c("% requires \\usepackage{booktabs}", "\\begin{table}[!ht]\\centering",
+  "\\caption{Post-payment difference-in-differences across estimators, main outcomes. Cells report the treated$\\times$post effect (TWFE; matched donor set) or the treated-vs-synthetic-control gap (SCM), $p$-values below. TWFE rows include log words and log audience, unit and month fixed effects, SE clustered by unit and month; SCM uses an in-space placebo $p$. Effects are small and lose significance across specifications.}",
+  "\\label{tab:did_main}", "\\small", "\\begin{tabular}{l cccc}", "\\toprule",
+  " & H2 & H2 & H3 & H4 \\\\", hdr3, "\\midrule",
+  spec_rows("TWFE (full)", "tw"), spec_rows("TWFE (matched)", "twm"), spec_rows("Synthetic control", "sc"),
+  "\\bottomrule", "\\multicolumn{5}{l}{\\footnotesize *** $p<.01$, ** $p<.05$, * $p<.10$.} \\\\",
+  "\\end{tabular}", "\\end{table}")
+writeLines(tab3, file.path(SC, "table3_did_all.tex"))
 
 ###############################################################################
 ## APPENDIX -- full outcome breakdowns (score/pos/net, Ukraine, KL/Cosine) ----

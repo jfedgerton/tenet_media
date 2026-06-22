@@ -284,7 +284,7 @@ GLW  <- c("The Benny Show" = 0.8, "The Rubin Report" = 0.8, "Tim Pool" = 0.8, "O
 pG <- ggplot(G, aes(val, rk)) +
   geom_segment(aes(x = 0, xend = val, yend = rk, colour = grp, linewidth = grp), alpha = 0.8) +
   geom_point(aes(colour = grp, size = grp)) +
-  facet_wrap(~ measure, scales = "free", nrow = 1) +
+  facet_wrap(~ measure, scales = "free", nrow = 2) +
   scale_colour_manual(values = GPAL) +
   scale_size_manual(values = GSZ, guide = "none") + scale_linewidth_manual(values = GLW, guide = "none") +
   labs(x = "Value (programs ranked low to high)", y = NULL, colour = NULL,
@@ -292,6 +292,6 @@ pG <- ggplot(G, aes(val, rk)) +
        subtitle = "Each lollipop is one program; the three Tenet shows are coloured.") +
   theme_pub + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank()) +
   guides(colour = guide_legend(override.aes = list(size = 3)))
-ggsave(file.path(SC, "figG_ranked.pdf"), pG, width = 14, height = 4.6)
+ggsave(file.path(SC, "figG_ranked.pdf"), pG, width = 9, height = 8)
 
 cat("WROTE fig1_predicted / figA_forest / figB_eventstudy / figC_sc_trajectory + figD_lollipop / figE_timeseries / figF_dumbbell / figG_ranked\n")
