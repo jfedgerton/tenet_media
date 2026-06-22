@@ -1,0 +1,50 @@
+# =============================================================================
+# Repository whitelist: track ONLY the analysis code and the sentence data.
+# Everything else (audio, transformer models, raw transcripts, scratch files,
+# intermediate outputs, credentials) is ignored. This is a "deny-by-default"
+# .gitignore: ignore everything at the root, then re-include code/ and the
+# sentence/panel data under data/sc_results/.
+# =============================================================================
+
+# 1) ignore everything at the repo root by default
+/*
+
+# 2) re-include the things we DO want to track
+!/code/
+!/data/
+!/README.md
+!/requirements.txt
+!/.gitignore
+!/.gitattributes
+
+# 3) inside data/: keep only the sentence corpus + analysis-ready panels
+/data/*
+!/data/sc_results/
+/data/sc_results/*
+!/data/sc_results/opus_c0_corpus_labeled.parquet   # the labeled sentences
+!/data/sc_results/*.csv                             # show x month panels + result tables
+
+# 4) inside code/: drop caches, archived/legacy code, and transfer leftovers
+code/__pycache__/
+code/archive/
+code/*.b64
+code/*.zip
+code/*.pyc
+
+# 5) never track heavy binaries anywhere in the tree
+*.pt
+*.bin
+*.safetensors
+*.ckpt
+*.mp3
+*.wav
+*.m4a
+*.log
+.env
+*.env
+desktop.ini
+.DS_Store
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata

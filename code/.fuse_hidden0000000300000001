@@ -1,0 +1,74 @@
+#!/bin/bash
+# rename_pipeline.sh -- renumber the CURRENT pipeline files to 01..21.
+# Idempotent: skips files that are absent (Dropbox copy is a subset of Roar).
+# Word-boundary-anchored sed fixes internal references in launchers + master,
+# so single-digit old names (1_) cannot corrupt new double-digit names (01_).
+set -u
+
+M=(
+"1_pull_data.py:01_pull_data.py"
+"run_pull_data.sbatch:01_pull_data.sbatch"
+"2_download_audio.py:02_download_audio.py"
+"download_audio.sbatch:02_download_audio.sbatch"
+"transcribe_missing.sbatch:02_transcribe_missing.sbatch"
+"3_create_key.py:03_create_key.py"
+"3_create_key.R:03_create_key.R"
+"4_transcribe.py:04_transcribe.py"
+"5_build_corpus.py:05_build_corpus.py"
+"5b_build_corpus_shard.py:06_build_corpus_shard.py"
+"5b_build_corpus_shard.sbatch:06_build_corpus_shard.sbatch"
+"5c_merge_corpus.py:07_merge_corpus.py"
+"5c_merge_corpus.sbatch:07_merge_corpus.sbatch"
+"6_topic_model.py:08_topic_model.py"
+"6_topic_model.sbatch:08_topic_model.sbatch"
+"6b_build_russia_class.py:09_build_russia_class.py"
+"6b_build_russia_class.sbatch:09_build_russia_class.sbatch"
+"6c_merge_corpus_topics.py:10_merge_corpus_topics.py"
+"6c_merge_corpus_topics.sbatch:10_merge_corpus_topics.sbatch"
+"9aa_sample1500.py:11_sample1500.py"
+"9aa_sample1500.sbatch:11_sample1500.sbatch"
+"9bb_freshtest.py:12a_validation_freshtest.py"
+"9bb_freshtest.sbatch:12a_validation_freshtest.sbatch"
+"9cc_freshtest2.py:12b_validation_freshtest2.py"
+"9cc_freshtest2.sbatch:12b_validation_freshtest2.sbatch"
+"9dd_freshtest3.py:12c_validation_freshtest3.py"
+"9dd_freshtest3.sbatch:12c_validation_freshtest3.sbatch"
+"9s_stance_sample.py:12d_validation_stance_sample.py"
+"9s_sample.sbatch:12d_validation_stance_sample.sbatch"
+"9y_vset_v2.py:12e_validation_vset.py"
+"9y_vset.sbatch:12e_validation_vset.sbatch"
+"bert_train_infer.py:13_bert_label.py"
+"label_opus_c0.sbatch:13_bert_label.sbatch"
+"build_h_panels.py:14_build_panels.py"
+"main_analyses.R:15_main_analyses.R"
+"grid_sweep.R:16_grid_sweep.R"
+"bert_train_infer_fp.py:17_bert_label_4class.py"
+"label_opus_c0_fp.sbatch:17_bert_label_4class.sbatch"
+"merge_predsfp.py:18_merge_predsfp.py"
+"probshift_grid.R:19_probshift_grid.R"
+"chain_probshift.sbatch:19_run_probshift.sbatch"
+"20_topic_distribution.py:20_topic_distribution.py"
+"21_h3_topic_grid.py:21_h3_topic_grid.py"
+)
+
+echo "== rename =="
+for pair in "${M[@]}"; do
+  o="${pair%%:*}"; n="${pair##*:}"
+  [ "$o" = "$n" ] && continue
+  if [ -f "$o" ]; then mv -n "$o" "$n" && echo "  $o -> $n"; fi
+done
+
+echo "== fix internal references (launchers + master) =="
+for pair in "${M[@]}"; do
+  o="${pair%%:*}"; n="${pair##*:}"
+  [ "$o" = "$n" ] && continue
+  oe=$(printf '%s' "$o" | sed 's/[.]/\\./g')   # escape dots
+  for f in *.sbatch *.sh; do
+    [ -f "$f" ] || continue
+    sed -i "s/\\b${oe}\\b/${n}/g" "$f"
+  done
+done
+
+echo "== current files (code/ root) =="
+ls -1 | grep -vx archive | sort
+echo "RENAME_DONE"

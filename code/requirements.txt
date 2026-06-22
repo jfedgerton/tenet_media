@@ -1,0 +1,35 @@
+# =============================================================
+# Python dependencies for the Tenet Media podcast pipeline
+# Install: pip install -r requirements.txt --break-system-packages
+# =============================================================
+
+# --- Step 1: RSS parsing ---
+requests>=2.28
+beautifulsoup4>=4.11
+lxml>=4.9
+pandas>=1.5
+
+# --- Step 2: Audio download ---
+# (uses requests, already listed above)
+
+# --- Step 3: Key creation ---
+# (uses pandas + pathlib, already listed above)
+
+# --- Step 4: Transcription ---
+openai-whisper>=20230918
+
+# --- Step 5: Corpus building ---
+nltk>=3.8
+pyarrow>=12.0
+
+# --- Step 6: Topic modeling ---
+bertopic>=0.15
+sentence-transformers>=2.2
+umap-learn>=0.5
+hdbscan>=0.8
+scikit-learn>=1.2
+
+# --- Step 7: Sentiment analysis ---
+transformers>=4.30
+torch>=2.0
+scipy>=1.10
