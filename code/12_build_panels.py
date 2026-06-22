@@ -102,4 +102,36 @@ P = pd.DataFrame(out, columns=["rule", "unit", "month", "treated", "n_ment_r", "
 P["post"] = (P["month"] >= TREAT).astype(int); P["tp"] = P["treated"] * P["post"]
 P.to_csv(SC + "/perturb_panels_all.csv", index=False)
 print("PERTURB rules", P["rule"].nunique(), "rows", len(P))
+
+# ---------- monthly audience series (Jon Green episode-level data) ----------
+# Episodes -> show x month audience, mapped to analysis units (Tim pooled) via the
+# static file's podcast_id_dd <-> norm(title) <-> unit map (same match the pipeline uses).
+import re
+def nrm(x): return re.sub(r"[^a-z0-9]", "", str(x).lower())
+SHOWDATA = COLLAB + "/data/show_data"
+try:
+    ep = pd.read_csv(SHOWDATA + "/tenet_block_episode_metadata.csv",
+                     usecols=["podcast_id_dd", "episode_airdate", "audience_lwr", "audience_upr", "audience_midpoint"])
+    stt = pd.read_csv(SHOWDATA + "/treated_terminal_blocks_weightedDecay.csv")
+    units = sorted(set(df["unit"]))
+    keymap = {nrm(u): u for u in units}
+    for t in TIM:
+        keymap[nrm(t)] = "tim_pool"                       # the 3 Tim feeds -> tim_pool
+    stt["ukey"] = stt["title"].map(lambda s: keymap.get(nrm(s)))
+    id2unit = stt.dropna(subset=["ukey"])[["podcast_id_dd", "ukey"]].drop_duplicates()
+    ep = ep.merge(id2unit, on="podcast_id_dd", how="inner")
+    ep["airdate"] = pd.to_datetime(ep["episode_airdate"].astype(str).str[:10], errors="coerce")
+    ep = ep.dropna(subset=["airdate"])
+    ep["month"] = ep["airdate"].values.astype("datetime64[M]")
+    am = (ep.groupby(["ukey", "month"])
+            .agg(aud_mid=("audience_midpoint", "mean"), aud_lwr=("audience_lwr", "mean"),
+                 aud_upr=("audience_upr", "mean"), n_eps=("audience_midpoint", "size"))
+            .reset_index().rename(columns={"ukey": "unit"}))
+    am.to_csv(SC + "/audience_monthly.csv", index=False)
+    n_treat = am[am.unit.isin(TRU)].unit.nunique()
+    print("AUDIENCE_MONTHLY rows", len(am), "units", am["unit"].nunique(),
+          "(of", len(units), ") treated_units_matched", n_treat, "of 3")
+except FileNotFoundError as e:
+    print("AUDIENCE skipped (episode file not found):", e)
+
 print("BUILD_DONE")

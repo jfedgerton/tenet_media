@@ -1,11 +1,11 @@
 ###############################################################################
-# 19_probshift_grid.R  --  probability mass-transfer robustness grid for H1 & H2,
-# now swept over multiple candidate TREATMENT DATES and all five specifications.
+# 16_grid_h1h2.R  --  probability mass-transfer robustness grid for H1 & H2,
+# swept over candidate TREATMENT DATES and all five specifications.
 #
 # Probability perturbation (per sentence, 4-class softmax): move mass `s` from a
 # source class to a destination class (clipped, sum stays 1), re-argmax, recompute
 # score=p_pos-p_neg. 12 ops + identity, crossed Russia x Ukraine x s in
-# seq(.10,.15,.01) = 13 x 13 x 6 = 1014 mass cells.
+# seq(0,0.30,0.025) = 13 x 13 x 13 mass cells.
 #
 # TREATMENT-DATE SWEEP (3 event-anchored dates from the DOJ indictment timeline):
 #   2022-12-01  Russia begins the Tenet relationship (Chen <-> RT persona "Grigoriann")
@@ -21,8 +21,9 @@
 #   H2_matched  same TWFE on matched control set
 #   H2_SCM      composite treated vs donor pool, quadprog weights + in-space placebo
 #
-# Outcomes (9): metric in {score, pos, net(=pos-neg diff)} x set in
-#   {Russia, Ukraine, Combined = Russia - Ukraine}  (anti-Ukraine == pro-Russia).
+# Outcomes: stance metric in {score, pos, net} x {Russia, Ukraine, Combined} (9), PLUS
+#   comment-VOLUME counts: vol_pos (# positive sentences) and vol_posneg (# positive
+#   - # negative) x {Russia, Ukraine, Combined} (6). Combined = Russia - Ukraine.
 #
 # Input : data/sc_results/probs_4class.csv   Output: master_probshift_coefs.csv
 # Treated units = the_benny_show, the_rubin_report, tim_pool (3 feeds pooled).
@@ -110,7 +111,10 @@ scm_outcome <- function(pan, col, wcol, treat) {
 }
 stance <- list(c("Russia","score","r_score"), c("Russia","pos","r_pos"), c("Russia","net","r_net"),
                c("Ukraine","score","u_score"), c("Ukraine","pos","u_pos"), c("Ukraine","net","u_net"),
-               c("Combined","score","c_score"), c("Combined","pos","c_pos"), c("Combined","net","c_net"))
+               c("Combined","score","c_score"), c("Combined","pos","c_pos"), c("Combined","net","c_net"),
+               c("Russia","vol_pos","vol_pos_r"),  c("Russia","vol_posneg","vol_posneg_r"),
+               c("Ukraine","vol_pos","vol_pos_u"), c("Ukraine","vol_posneg","vol_posneg_u"),
+               c("Combined","vol_pos","vol_pos_c"),c("Combined","vol_posneg","vol_posneg_c"))
 
 run_cell <- function(ro, uo, s) {
   R <- apply_op(Rpp, Rpn, Rpu, Rpx, ro, s)
@@ -118,26 +122,34 @@ run_cell <- function(ro, uo, s) {
   Rm <- max.col(cbind(R[[1]], R[[2]], R[[3]], R[[4]]), ties.method = "first")
   Um <- max.col(cbind(U[[1]], U[[2]], U[[3]], U[[4]]), ties.method = "first")
   sd <- data.table(unit = unit_v, month = month_v,
-                   r_ment = Rm != 4L, r_sc = R[[1]] - R[[2]], r_p = Rm == 1L, r_o = c(1L,-1L,0L,0L)[Rm],
-                   u_ment = Um != 4L, u_sc = U[[1]] - U[[2]], u_p = Um == 1L, u_o = c(1L,-1L,0L,0L)[Um])
+                   r_ment = Rm != 4L, r_sc = R[[1]] - R[[2]], r_p = Rm == 1L, r_neg = Rm == 2L, r_o = c(1L,-1L,0L,0L)[Rm],
+                   u_ment = Um != 4L, u_sc = U[[1]] - U[[2]], u_p = Um == 1L, u_neg = Um == 2L, u_o = c(1L,-1L,0L,0L)[Um])
   aggR <- sd[r_ment == TRUE, .(n_ment_r = .N, r_score = mean(r_sc), r_pos = mean(r_p), r_net = mean(r_o)), by = .(unit, month)]
   aggU <- sd[u_ment == TRUE, .(n_ment_u = .N, u_score = mean(u_sc), u_pos = mean(u_p), u_net = mean(u_o)), by = .(unit, month)]
+  # comment-VOLUME counts over ALL sentences in the unit-month (positive / negative)
+  aggV <- sd[, .(n_total = .N, vol_pos_r = sum(r_p), vol_neg_r = sum(r_neg), vol_pos_u = sum(u_p), vol_neg_u = sum(u_neg)), by = .(unit, month)]
   pan <- merge(aggR, aggU, by = c("unit", "month"), all = TRUE)
+  pan <- merge(pan, aggV, by = c("unit", "month"), all = TRUE)
   pan <- merge(pan, umeta[, .(unit, log_aud, treated)], by = "unit", all.x = TRUE)
+  for (cc in c("n_total","vol_pos_r","vol_neg_r","vol_pos_u","vol_neg_u")) pan[is.na(get(cc)), (cc) := 0L]
   pan[, t := as.integer(round(as.numeric(month - MINM) / 30.4375))]; pan[, t2 := t^2]; pan[, tenet := treated]
   pan[, c_score := r_score - u_score]; pan[, c_pos := r_pos - u_pos]; pan[, c_net := r_net - u_net]
+  # volume outcomes: vol_pos (# positive) and vol_posneg (# positive - # negative); Combined = Russia - Ukraine
+  pan[, vol_posneg_r := vol_pos_r - vol_neg_r]; pan[, vol_posneg_u := vol_pos_u - vol_neg_u]
+  pan[, vol_pos_c := vol_pos_r - vol_pos_u]; pan[, vol_posneg_c := vol_posneg_r - vol_posneg_u]
   out <- vector("list", length(TREAT_DATES) * length(stance) * 5L); k <- 0L
   for (td in TREAT_DATES) {
     pan[, post := as.integer(month >= td)]; pan[, tp := tenet * post]
     for (o in stance) {
       set <- o[1]; metric <- o[2]; col <- o[3]
-      if (set == "Combined") d <- pan[n_ment_r >= MINMENT & n_ment_u >= MINMENT & !is.na(log_aud) & !is.na(get(col))]
+      if (grepl("^vol", metric)) d <- pan[!is.na(log_aud) & !is.na(get(col))]
+      else if (set == "Combined") d <- pan[n_ment_r >= MINMENT & n_ment_u >= MINMENT & !is.na(log_aud) & !is.na(get(col))]
       else if (set == "Russia") d <- pan[n_ment_r >= MINMENT & !is.na(log_aud) & !is.na(get(col))]
       else d <- pan[n_ment_u >= MINMENT & !is.na(log_aud) & !is.na(get(col))]
       pre <- d[post == 0]; prem <- pre[unit %in% MU]; dmU <- d[unit %in% MU]
       f1 <- as.formula(paste(col, "~ tenet + t + t2 + log_aud"))
       ftw <- as.formula(paste(col, "~ tp + post:log_aud | unit + month"))
-      wcol <- if (set == "Ukraine") "n_ment_u" else "n_ment_r"
+      wcol <- if (grepl("^vol", metric)) "n_total" else if (set == "Ukraine") "n_ment_u" else "n_ment_r"
       add <- function(spec, v) { k <<- k + 1L; out[[k]] <<- data.table(rus_op = ro, ukr_op = uo, shift = s, treat_date = as.character(td), set = set, metric = metric, spec = spec, estimate = v[1], se = v[2], p = v[3]) }
       add("H1_OLS",     grabT(tryCatch(feols(f1, pre, cluster = ~unit), error = function(e) NULL), "tenet"))
       add("H1_matched", grabT(tryCatch(feols(f1, prem, cluster = ~unit), error = function(e) NULL), "tenet"))
@@ -150,7 +162,7 @@ run_cell <- function(ro, uo, s) {
   rbindlist(out)
 }
 
-grid <- as.data.table(expand.grid(rus_op = 0:12, ukr_op = 0:12, s = seq(0.10, 0.15, 0.01), KEEP.OUT.ATTRS = FALSE))
+grid <- as.data.table(expand.grid(rus_op = 0:12, ukr_op = 0:12, s = seq(0, 0.30, 0.025), KEEP.OUT.ATTRS = FALSE))
 cat("CELLS", nrow(grid), "DATES", length(TREAT_DATES), "CORES", NC, "\n")
 res <- mclapply(seq_len(nrow(grid)), function(i) run_cell(grid$rus_op[i], grid$ukr_op[i], grid$s[i]), mc.cores = NC)
 fin <- rbindlist(res, fill = TRUE)

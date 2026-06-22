@@ -49,6 +49,15 @@ Vunit <- V[, .(n_words = mean(n_sent_total)), by = .(unit, month)]
 P <- merge(P, Vunit, by = c("unit", "month"), all.x = TRUE)
 P[, log_words := log(n_words)]
 
+## time-varying MONTHLY audience (Jon Green episode-level data, built by audience_monthly.R)
+## merged in for EDA / the grid sweep; the main spec below still controls on log_words.
+AM <- tryCatch(fread(file.path(SC, "audience_monthly.csv")), error = function(e) NULL)
+if (!is.null(AM)) {
+  AM[, month := as.Date(month)]
+  P <- merge(P, AM[, .(unit, month, aud_mid)], by = c("unit", "month"), all.x = TRUE)
+  P[, log_aud_m := log(aud_mid)]
+}
+
 ## H3 agenda shares (Russia/Ukraine/Combined mentions over ALL sentences that month)
 P[, prop_rus  := n_ment_r / n_words]
 P[, prop_ukr  := n_ment_u / n_words]

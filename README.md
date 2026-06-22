@@ -35,8 +35,9 @@ ordinal. **Combined** = Russia − Ukraine (anti-Ukraine ≈ pro-Russia). The ea
 
 ## Pipeline (article order)
 
-Files live in `code/`. Steps marked **(Roar)** are HPC-only data-construction scripts not
-mirrored in this repo; **(todo)** is not yet written.
+Files live in `code/`. Steps `01`–`10` are the data/measurement construction (HPC/SLURM);
+the stance-labeling block (`11`) lives in `code/archive/labeling/`; `13`+ is the R analysis
+layer. **(todo)** = not yet written.
 
 | # | Script | What it runs |
 |---|--------|--------------|
@@ -44,20 +45,20 @@ mirrored in this repo; **(todo)** is not yet written.
 | 02 | `02_download_audio.py`, `02_transcribe_missing.sbatch` | Download episode audio |
 | 03 | `03_create_key.py` / `.R` | Episode ↔ show key |
 | 04 | `04_transcribe.py` | Whisper ASR → transcripts |
-| 05 | `05_build_corpus.py` | Sentence-level corpus (build + shard + merge) |
+| 05 | `05_build_corpus.py` (+ `05_build_corpus_shard.*`, `05_merge_corpus.*`) | Sentence corpus: build → shard → merge |
 | 06 | `06_topic_model.py` | BERTopic over the corpus |
-| 07 | `07_identify_russia_topics.*` **(Roar)** | Flag the Russia/Ukraine topics (78, 79) |
-| 08 | `08_merge_corpus_topics.*` **(Roar)** | Attach topic IDs to every sentence |
-| 09 | `09_sample_validation.*` **(Roar)** | Draw the human-coding sample (1,500) |
-| 10 | `10_validation.*` **(Roar)** | Inter-coder agreement / accuracy on the stance labels |
-| 11 | `11_merge_preds.py` (+ stance labelers **(Roar)**) | Human-distilled machine stance labels merged to the corpus |
-| 12 | `12_build_panels.py` | show × month stance + volume panels |
+| 07 | `07_identify_russia_topics.*` | Flag the Russia/Ukraine topics (78, 79) |
+| 08 | `08_merge_corpus_topics.*` | Attach topic IDs to every sentence → `corpus_with_topics.parquet` |
+| 09 | `09_sample_validation.*` | Draw the human-coding sample (1,500) |
+| 10 | `10a–10e_validation_*.*` | Human coding / inter-coder agreement on the stance labels |
+| 11 | stance labeling — `code/archive/labeling/` | Codebook LLM labels → fine-tune RoBERTa to 4-class stance → infer over topic-78/79 sentences (archived block) |
+| 12 | `12_build_panels.py` | show × month stance + volume panels **+ `audience_monthly.csv`** (monthly audience) |
 | 13 | `13_main_h1h3.R` | **Main H1/H2/H3** — Russia/Ukraine/Combined × score/pos/net; H1 FE + matched-FE, H2/H3 TWFE + SCM |
 | 14 | `14_h4_topic_model.py` (+ `14_h4_tfidf_clean.py`) | H4 agenda-divergence panel + distinctive-topic TF-IDF |
 | 15 | `15_main_h4.R` | **Main H4** — agenda-divergence DiD (JSD/KL/cosine; H4a level + H4b DiD) |
 | 16 | `16_grid_h1h2.R` (+ `16_summarize_grid.py`) | H1/H2 probability mass-transfer grid (+ pos/neg comment-volume counts) |
 | 17 | `17_relabel_sweep.R` | Discrete relabel robustness |
-| 18 | `18_label_noise.py` | Random-flip (5/10/20%) + recode label robustness |
+| 18 | `18_label_noise.R` | Random-flip (5/10/20%) + recode label robustness (R/`fixest`) |
 | 19 | `19_loso_panel.py` | Per-feed panels (Tim split) for leave-one-show-out |
 | 20 | `20_loso_models.R` | 31-config leave-one-show-out across H1–H4 |
 | 21 | `21_h1_inference.R` | Randomization inference for H1 |
@@ -65,7 +66,8 @@ mirrored in this repo; **(todo)** is not yet written.
 | 23 | `23_h1_appendix.R` | Control-set series (total words), unmentioned-as-0 |
 | 24 | `24_h3_topic_dist.py`, `24_h3_topic_grid.R` | H3 topic-probability sweep |
 | 25 | `25_h4_divergence_grid.R` (+ `25_run_h4.sbatch`) | H4 divergence robustness grid |
-| 26+ | `tables_figures` **(todo)** | LaTeX tables + forest / event-study / sweep plots + coding-scheme exhibit |
+| 26 | `26_min_mention_sweep.R` | Sweep the min-mentions threshold {0,1,3,5,10,20} × conditional/zero coding → coefficient distribution |
+| 27+ | `tables_figures` **(todo)** | LaTeX tables + forest / event-study / sweep plots + coding-scheme exhibit |
 
 ## Designs
 OLS / Mahalanobis-matched level comparison (H1); TWFE (`fixest`) + synthetic control
