@@ -1,128 +1,99 @@
-# Tenet Media / Foreign Lobbying Podcast Analysis
+# Tenet Media / Foreign-Influence Podcast Analysis
 
-## Research Question
+Did Russian funding routed through **Tenet Media** change how three treated podcasts
+(Benny Johnson, Dave Rubin, and Tim Pool — his three feeds pooled) discuss
+Russia/Ukraine, relative to ~280 control conservative podcasts? The project transcribes
+~212K episodes, models topics, classifies **stance** toward Russia/Ukraine, and uses
+difference-in-differences / synthetic-control designs to measure shifts in stance,
+agenda emphasis, and agenda divergence around the payment period.
 
-Did a cash infusion from Russia change the coverage of Tenet Media podcast
-companies? This project transcribes ~212K podcast episodes and uses topic
-modeling, sentiment analysis, and synthetic control methods to measure shifts
-in framing, agenda emphasis, and tone around Russia/Ukraine before vs. after
-the payment period.
+**Treatment date:** `2023-10-01` — the first RT payment to Tenet (DOJ indictment: wires
+Oct 2023–Aug 2024), ~1 month before Tenet's public Nov-2023 launch. Panel 2018-01 →
+2024-08, truncated at the Sept 4 2024 indictment.
 
-## Directory Structure
+## Measurement (important — this is stance, not sentiment)
 
-```
-podcast/
-├── code/                    # All pipeline scripts (this folder)
-│   ├── 1_pull_data.py       # Step 1: scrape RSS feeds → JSON metadata
-│   ├── 2_download_audio.py  # Step 2: download mp3 files
-│   ├── 3_create_key.py      # Step 3: build master file key + find missing
-│   ├── 4_transcribe.py      # Step 4: Whisper transcription (GPU)
-│   ├── 5_build_corpus.py    # Step 5: transcripts → sentence-level DataFrame
-│   ├── 6_topic_model.py     # Step 6: BERTopic modeling (GPU)
-│   ├── 7_sentiment.py       # Step 7: sentiment on Russia/Ukraine topics
-│   ├── 8_synthetic_control.R  # Step 8: synthetic control (R)
-│   ├── 9_regression.R       # Step 9: main regression models (R)
-│   ├── 10_validation.R      # Step 10: validation checks (R)
-│   ├── 11_robustness.R      # Step 11: robustness / sensitivity (R)
-│   ├── 12_visualization.R   # Step 12: publication figures (R)
-│   ├── podcast_feeds.csv    # Input: RSS feed URLs + metadata
-│   └── requirements.txt     # Python dependencies
-├── slurm/                   # Slurm sbatch wrappers for each step
-├── json_data/               # Per-podcast JSON from step 1
-├── audio_temp/              # Downloaded mp3 files (step 2, deleted after step 4)
-├── transcript_key/          # Transcripts organized by show (step 4 output)
-│   └── {show_name}/         # One subfolder per podcast
-│       └── {show}_{date}_{ep}.txt
-├── data/                    # Intermediate datasets
-│   ├── corpus.parquet       # Sentence-level corpus (step 5 output)
-│   ├── topics.parquet       # Topic assignments (step 6 output)
-│   ├── topic_model/         # Saved BERTopic model artifacts
-│   ├── sentiment.parquet    # Sentiment scores (step 7 output)
-│   └── analysis_ready.csv   # Final merged dataset for R (step 7 output)
-├── output/                  # R analysis outputs
-│   ├── figures/             # Publication-quality plots
-│   ├── tables/              # Regression tables
-│   └── results/             # Model objects, diagnostics
-├── file_key.csv             # Master episode key
-├── missing_files.csv        # Episodes still needing transcription
-└── logs/                    # Slurm log files
-```
+The analyses use **human + machine stance labeling on the Russia/Ukraine topics**, not an
+off-the-shelf sentiment model:
 
-## Pipeline Overview
+1. **Topics.** BERTopic over the full corpus locates the Russia/Ukraine topics (78, 79).
+2. **Human coding.** A sample of topic-78/79 sentences is hand/LLM-coded for *stance toward
+   the target* (the validation set).
+3. **Machine labeling.** A transformer classifier distilled from that human-validated set
+   labels all ~444K topic-78/79 sentences — 4 classes per target: positive / negative /
+   neutral / unmentioned.
 
-### Data Collection (Python)
+Outcomes per target: `score` = p_pos − p_neg, `pos` = positive rate, `net` = (pos − neg)
+ordinal. **Combined** = Russia − Ukraine (anti-Ukraine ≈ pro-Russia). The earlier generic
+**sentiment** pass is deprecated and not used anywhere in the current pipeline.
 
-| Step | Script | Input | Output | HPC? |
-|------|--------|-------|--------|------|
-| 1 | `1_pull_data.py` | `podcast_feeds.csv` | `json_data/*.json` | CPU |
-| 2 | `2_download_audio.py` | `json_data/*.json` | `audio_temp/*.mp3` | CPU |
-| 3 | `3_create_key.py` | `json_data/*.json` + `transcript_key/` | `file_key.csv`, `missing_files.csv` | CPU |
-| 4 | `4_transcribe.py` | `missing_files.csv` + `audio_temp/` | `transcript_key/{show}/*.txt` | GPU (A100) |
+## Hypotheses
+- **H1** — treated hosts were already more pro-Russia *before* the payments (selection).
+- **H2** — the payments pushed them further pro-Russia / anti-Ukraine (treatment).
+- **H3** — the payments changed the *agenda* (Russia's share of total discussion).
+- **H4** — treated hosts ran a more *divergent overall agenda* (divisive non-Russia content).
 
-### NLP Processing (Python, GPU recommended)
+## Pipeline (article order)
 
-| Step | Script | Input | Output | HPC? |
-|------|--------|-------|--------|------|
-| 5 | `5_build_corpus.py` | `transcript_key/` | `data/corpus.parquet` | CPU |
-| 6 | `6_topic_model.py` | `data/corpus.parquet` | `data/topics.parquet`, `data/topic_model/` | GPU |
-| 7 | `7_sentiment.py` | `data/corpus.parquet` + `data/topics.parquet` | `data/sentiment.parquet`, `data/analysis_ready.csv` | GPU |
+Files live in `code/`. Steps marked **(Roar)** are HPC-only data-construction scripts not
+mirrored in this repo; **(todo)** is not yet written.
 
-### Statistical Analysis (R)
+| # | Script | What it runs |
+|---|--------|--------------|
+| 01 | `01_pull_data.py` | Pull podcast RSS feeds → episode metadata |
+| 02 | `02_download_audio.py`, `02_transcribe_missing.sbatch` | Download episode audio |
+| 03 | `03_create_key.py` / `.R` | Episode ↔ show key |
+| 04 | `04_transcribe.py` | Whisper ASR → transcripts |
+| 05 | `05_build_corpus.py` | Sentence-level corpus (build + shard + merge) |
+| 06 | `06_topic_model.py` | BERTopic over the corpus |
+| 07 | `07_identify_russia_topics.*` **(Roar)** | Flag the Russia/Ukraine topics (78, 79) |
+| 08 | `08_merge_corpus_topics.*` **(Roar)** | Attach topic IDs to every sentence |
+| 09 | `09_sample_validation.*` **(Roar)** | Draw the human-coding sample (1,500) |
+| 10 | `10_validation.*` **(Roar)** | Inter-coder agreement / accuracy on the stance labels |
+| 11 | `11_merge_preds.py` (+ stance labelers **(Roar)**) | Human-distilled machine stance labels merged to the corpus |
+| 12 | `12_build_panels.py` | show × month stance + volume panels |
+| 13 | `13_main_h1h3.R` | **Main H1/H2/H3** — Russia/Ukraine/Combined × score/pos/net; H1 FE + matched-FE, H2/H3 TWFE + SCM |
+| 14 | `14_h4_topic_model.py` (+ `14_h4_tfidf_clean.py`) | H4 agenda-divergence panel + distinctive-topic TF-IDF |
+| 15 | `15_main_h4.R` | **Main H4** — agenda-divergence DiD (JSD/KL/cosine; H4a level + H4b DiD) |
+| 16 | `16_grid_h1h2.R` (+ `16_summarize_grid.py`) | H1/H2 probability mass-transfer grid (+ pos/neg comment-volume counts) |
+| 17 | `17_relabel_sweep.R` | Discrete relabel robustness |
+| 18 | `18_label_noise.py` | Random-flip (5/10/20%) + recode label robustness |
+| 19 | `19_loso_panel.py` | Per-feed panels (Tim split) for leave-one-show-out |
+| 20 | `20_loso_models.R` | 31-config leave-one-show-out across H1–H4 |
+| 21 | `21_h1_inference.R` | Randomization inference for H1 |
+| 22 | `22_h1_altspecs.R` | No-listen / month-FE / year-FE / host-clustered H1 |
+| 23 | `23_h1_appendix.R` | Control-set series (total words), unmentioned-as-0 |
+| 24 | `24_h3_topic_dist.py`, `24_h3_topic_grid.R` | H3 topic-probability sweep |
+| 25 | `25_h4_divergence_grid.R` (+ `25_run_h4.sbatch`) | H4 divergence robustness grid |
+| 26+ | `tables_figures` **(todo)** | LaTeX tables + forest / event-study / sweep plots + coding-scheme exhibit |
 
-| Step | Script | Input | Output |
-|------|--------|-------|--------|
-| 8 | `8_synthetic_control.R` | `data/analysis_ready.csv` | synthetic control weights + estimates |
-| 9 | `9_regression.R` | `data/analysis_ready.csv` | regression tables |
-| 10 | `10_validation.R` | model outputs | placebo tests, pre-trend checks |
-| 11 | `11_robustness.R` | `data/analysis_ready.csv` | alternative specifications |
-| 12 | `12_visualization.R` | all outputs | `output/figures/*.pdf` |
+## Designs
+OLS / Mahalanobis-matched level comparison (H1); TWFE (`fixest`) + synthetic control
+(`quadprog` simplex weights, in-space placebo p-values) for H2/H3; Jensen-Shannon agenda
+divergence vs. the contemporaneous control consensus for H4. Time-varying total-words and
+month/host fixed effects as controls. Seed 123 throughout.
 
-## File Naming Convention
+## Data (not in this repo)
+Audio, transcripts, `corpus_with_topics.parquet`, the BERTopic model, and `master_*`
+result files are git-ignored. The repo tracks the code and the labeled stance corpus
+(`data/sc_results/opus_c0_corpus_labeled.parquet`) plus the show-month panels
+(`data/sc_results/*.csv`). HPC paths assume the ROAR Collab layout
+`/storage/group/LiberalArts/default/jfe4_collab/podcast/`.
 
-Audio and transcript files follow this pattern:
-```
-{show_name}_{YYYYMMDDHHMMSS}_{episode_number}.{ext}
-```
-- `show_name`: podcast slug (e.g., `bannon_s_war_room`)
-- `YYYYMMDDHHMMSS`: air date as 14-digit timestamp
-- `episode_number`: integer episode ID from Podchaser/RSS
-- `ext`: `.mp3` for audio, `.txt` for transcripts
+## Running
+HPC steps are SLURM jobs (`sbatch`); the R modeling layer (`13`, `15`, `16`, `17`, `20`,
+`21`–`25`) runs in RStudio locally or on Roar with `module load r` — repoint the `CO`/`SC`
+path variables at the top of each script to where the panel CSVs live. PI: Jared Edgerton (PSU).
 
-## Key Dates
-
-- **Treatment window**: The period when Russian payments flowed to Tenet Media.
-  Defined in `9_regression.R` as `TREATMENT_START` and `TREATMENT_END`.
-- **Indictment**: DOJ indictment date, used as an alternative cutoff.
-
-## Running on ROAR Collab
-
-Each step has a corresponding sbatch file in `slurm/`. Example:
-
-```bash
-# Step 1: pull RSS data
-sbatch slurm/01_pull_data.sbatch
-
-# Step 4: transcribe (GPU array job)
-sbatch slurm/04_transcribe.sbatch
-
-# Step 6: topic model (single GPU)
-sbatch slurm/06_topic_model.sbatch
-```
-
-GPU steps use `--constraint=a100 --partition=standard --account=jfe4_cr_default`.
-CPU-only steps use `--partition=basic` (free tier).
-
-## For the Grad Student
-
-1. **Start here**: Read this README, then skim `file_key.csv` to understand the
-   data scope (~212K episodes across ~200 podcasts).
-2. **Data collection is done**: Steps 1-4 are complete. Transcripts live in
-   `transcript_key/`. You should not need to rerun these unless adding new shows.
-3. **Your work starts at step 5**: Run `5_build_corpus.py` to build the sentence
-   dataset, then proceed sequentially.
-4. **Python environment**: `module load python/3.11.2` then activate the venv at
-   `../venv/`. Install any missing packages with `pip install -r requirements.txt`.
-5. **R environment**: `module load r/4.3.1`. Install packages to a local library
-   with `.libPaths()`.
-6. **Tenet shows**: The list of Tenet-affiliated podcasts is defined in
-   `7_sentiment.py` as `TENET_SHOWS`. Update if the list changes.
+## Changes from the earlier draft
+- **Renumbered into article order** (Data → Topic → Stance → Panels → H1/H2/H3 → H4 →
+  Grid → Robustness), replacing the old build-order numbering.
+- **Replaced "sentiment" with human + machine stance labeling on the topics**; the prior
+  off-the-shelf sentiment version is deprecated and removed from the pipeline.
+- **H1/H2/H3 consolidated into one script** (`13_main_h1h3.R`), written sequentially
+  (no loop), 3 outcomes × 3 operationalizations.
+- **H4 split into its own script** (`15_main_h4.R`), with its topic-model panel at `14`.
+- **`16_grid_h1h2.R`** to additionally output positive/negative comment-volume counts for
+  Russia/Ukraine/Combined *(content edit pending)*.
+- **Archived** superseded scripts (`15_main_analyses.R`, `30_h1_main.R`,
+  `29_best_h1_ci.R`) under `code/archive/`.
