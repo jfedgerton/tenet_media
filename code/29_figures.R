@@ -47,11 +47,20 @@ theme_pub <- theme_bw(base_size = 12) +
   theme(panel.grid.minor = element_blank(), axis.text.x = element_text(angle = 0, hjust = 0.5),
         strip.background = element_rect(fill = "grey92", colour = NA), legend.position = "bottom")
 
+## clean show titles (no underscores) + colourblind-safe palette (Dark2) -------
+nice_show <- function(u){
+  m <- c(the_benny_show = "The Benny Show", the_rubin_report = "The Rubin Report",
+         timcast_irl = "Timcast IRL", tim_pool_daily_news = "Tim Pool Daily News",
+         the_culture_war_podcast_with_tim_pool = "The Culture War", tim_pool = "Tim Pool")
+  unname(ifelse(u %in% names(m), m[u], tools::toTitleCase(gsub("_", " ", u)))) }
+ACCENT  <- "#D95F02"; NEUTRAL <- "grey75"                                  # Dark2 orange vs grey
+SHOWCOL <- c("The Benny Show" = "#1B9E77", "The Rubin Report" = "#D95F02", "Tim Pool" = "#7570B3")  # Dark2
+
 ## ---- predicted-contrast helpers ---------------------------------------------
 pred_lvl <- function(d, y){                                  # H1: pre-payment level
   d <- d[is.finite(get(y)) & is.finite(log_words) & is.finite(log_aud_m)]
   m <- feols(as.formula(paste0(y, " ~ tenet + log_words + log_aud_m | mfac")), d, cluster = ~ mfac + unit)
-  d0 <- copy(d); d0[, tenet := 0]; muC <- mean(predict(m, d0)); ct <- coeftable(m)["tenet", ]
+  muC <- mean(d[tenet == 0][[y]], na.rm = TRUE); ct <- coeftable(m)["tenet", ]
   data.table(group = c("Non-Tenet", "Tenet"), pred = c(muC, muC + ct["Estimate"]),
              lo = c(muC, muC + ct["Estimate"] - 1.96*ct["Std. Error"]),
              hi = c(muC, muC + ct["Estimate"] + 1.96*ct["Std. Error"]), p = ct["Pr(>|t|)"]) }
@@ -77,7 +86,7 @@ p1 <- ggplot(F1, aes(group, pred, colour = group)) +
   geom_hline(yintercept = 0, linewidth = 0.3, colour = "grey70") +
   geom_point(size = 3) + geom_errorbar(aes(ymin = lo, ymax = hi), width = 0.16, linewidth = 0.7) +
   facet_wrap(~ panel, scales = "free_y", nrow = 1) +
-  scale_colour_manual(values = c("Non-Tenet" = "grey45", "Tenet" = "#b2182b")) +
+  scale_colour_manual(values = c("Non-Tenet" = "grey45", "Tenet" = ACCENT)) +
   labs(x = NULL, y = "Predicted outcome", colour = NULL,
        title = "Predicted outcome for a Tenet vs. non-Tenet show, by hypothesis",
        subtitle = "Controls held at observed values. Bars = 95% CI on the Tenet gap (H1 level; H2-H4 treated x post).") +
@@ -113,7 +122,7 @@ pA <- ggplot(FA, aes(est, outcome, colour = sig)) +
   geom_vline(xintercept = 0, linetype = 2, colour = "grey55") +
   geom_point(size = 2.2) + geom_errorbarh(aes(xmin = lo, xmax = hi), height = 0.25) +
   facet_wrap(~ hyp, scales = "free", ncol = 2) +
-  scale_colour_manual(values = c("95% CI excludes 0" = "#b2182b", "n.s." = "grey55")) +
+  scale_colour_manual(values = c("95% CI excludes 0" = ACCENT, "n.s." = "grey55")) +
   labs(x = "Coefficient (H1: level; H2-H4: treated x post)", y = NULL, colour = NULL,
        title = "Treatment coefficients across all outcomes, by hypothesis") +
   theme_pub
@@ -131,17 +140,19 @@ es_one <- function(dat, ycol, ylab, mm = TRUE){
   ct <- as.data.table(coeftable(m), keep.rownames = "term")[grepl("^bin::", term)]
   ct[, bin := as.integer(sub("bin::(-?\\d+):tenet", "\\1", term))]
   rbind(data.table(bin = -6, Estimate = 0, `Std. Error` = 0), ct[, .(bin, Estimate, `Std. Error`)], fill = TRUE)[, outcome := ylab][] }
-FB <- rbind(es_one(P, "c_score", "H2: Combined stance score"), es_one(H, "jsd", "H4: Agenda divergence (JSD)", mm = FALSE))
+FB <- rbind(es_one(P, "c_score", "H2: Combined stance score"),
+            es_one(P, "prop_comb", "H3: Combined agenda share", mm = FALSE),
+            es_one(H, "jsd", "H4: Agenda divergence (JSD)", mm = FALSE))
 setnames(FB, "Std. Error", "se"); FB[, `:=`(lo = Estimate - 1.96*se, hi = Estimate + 1.96*se)]
 fwrite(FB, file.path(SC, "figB_eventstudy_data.csv"))
 pB <- ggplot(FB, aes(bin, Estimate)) +
-  geom_hline(yintercept = 0, colour = "grey60") + geom_vline(xintercept = 0, linetype = 2, colour = "#b2182b") +
+  geom_hline(yintercept = 0, colour = "grey60") + geom_vline(xintercept = 0, linetype = 2, colour = ACCENT) +
   geom_ribbon(aes(ymin = lo, ymax = hi), alpha = 0.15) + geom_line() + geom_point(size = 1.8) +
   facet_wrap(~ outcome, scales = "free_y", nrow = 1) +
   labs(x = "Months relative to payment (6-month bins, 0 = Oct 2023)", y = "Tenet x period (coef.)",
        title = "Event study: pre-payment parallel trends and post-payment (non-)effect") +
   theme_pub
-ggsave(file.path(SC, "figB_eventstudy.pdf"), pB, width = 9, height = 4)
+ggsave(file.path(SC, "figB_eventstudy.pdf"), pB, width = 12, height = 4)
 
 ###############################################################################
 ## FIGURE C (APPENDIX): synthetic-control trajectory (treated vs synthetic)
@@ -167,7 +178,7 @@ if (!is.null(scC) && nrow(scC)){
   pC <- ggplot(FC, aes(month, value, colour = series, linetype = series)) +
     geom_vline(xintercept = as.numeric(TREAT), linetype = 2, colour = "grey55") + geom_line(linewidth = 0.7) +
     facet_wrap(~ outcome, scales = "free_y", nrow = 1) +
-    scale_colour_manual(values = c("Treated (Tenet)" = "#b2182b", "Synthetic control" = "grey35")) +
+    scale_colour_manual(values = c("Treated (Tenet)" = ACCENT, "Synthetic control" = "grey35")) +
     scale_x_date(date_labels = "%Y") +
     labs(x = NULL, y = "Outcome", colour = NULL, linetype = NULL,
          title = "Synthetic-control fit: treated composite vs. synthetic counterfactual") + theme_pub
@@ -187,7 +198,7 @@ shw <- P[n_ment_r >= MINMENT & is.finite(r_pos) & is.finite(c_score),
 
 ## (D) LOLLIPOP -- Tenet shows vs control reference (mean + 90th pct) ----------
 Dl <- rbindlist(lapply(EXO, function(o){ col <- o[1]
-  t <- shw[tenet == 1, .(label = unit, val = get(col), kind = "Tenet show")]
+  t <- shw[tenet == 1, .(label = nice_show(unit), val = get(col), kind = "Tenet show")]
   r <- shw[tenet == 0]; rr <- data.table(label = c("Control mean", "Control 90th pct"),
            val = c(weighted.mean(r[[col]], r$w), as.numeric(quantile(r[[col]], .9))), kind = "Reference")
   rbind(t, rr)[, outcome := o[2]][] }))
@@ -196,7 +207,7 @@ fwrite(Dl, file.path(SC, "figD_lollipop_data.csv"))
 pD <- ggplot(Dl, aes(val, label, colour = kind)) +
   geom_segment(aes(x = 0, xend = val, yend = label), linewidth = 0.5) + geom_point(size = 3) +
   facet_wrap(~ outcome, scales = "free_x") +
-  scale_colour_manual(values = c("Tenet show" = "#b2182b", "Reference" = "grey45")) +
+  scale_colour_manual(values = c("Tenet show" = ACCENT, "Reference" = "grey45")) +
   labs(x = "Mention-weighted value", y = NULL, colour = NULL,
        title = "Per-show positivity: Tenet shows vs. control reference levels") + theme_pub
 ggsave(file.path(SC, "figD_lollipop.pdf"), pD, width = 9, height = 4)
@@ -212,7 +223,7 @@ mk <- function(o){ col <- o[1]; lab <- o[2]; w <- o[3]; ment <- o[4] == "1"
   con <- base[tenet == 0, .(m = weighted.mean(get(col), get(w)),
                             lo = as.numeric(quantile(get(col), .25, na.rm = TRUE)),
                             hi = as.numeric(quantile(get(col), .75, na.rm = TRUE))), by = month][, outcome := lab]
-  tre <- base[tenet == 1, .(unit, month, val = get(col))][, outcome := lab]
+  tre <- base[tenet == 1, .(show = nice_show(unit), month, val = get(col))][, outcome := lab]
   list(con, tre) }
 res <- lapply(TSMEAS, mk)
 TS <- rbindlist(lapply(res, `[[`, 1)); TT <- rbindlist(lapply(res, `[[`, 2))
@@ -221,9 +232,10 @@ fwrite(TT, file.path(SC, "figE_timeseries_data.csv"))
 pE <- ggplot() +
   geom_ribbon(data = TS, aes(month, ymin = lo, ymax = hi), fill = "grey80", alpha = .5) +
   geom_line(data = TS, aes(month, m), colour = "grey40") +
-  geom_line(data = TT, aes(month, val, colour = unit), linewidth = .6) +
+  geom_line(data = TT, aes(month, val, colour = show), linewidth = .6) +
   geom_vline(xintercept = as.numeric(TREAT), linetype = 2, colour = "grey30") +
   facet_wrap(~ outcome, scales = "free_y", nrow = 1) + scale_x_date(date_labels = "%Y") +
+  scale_colour_manual(values = SHOWCOL) +
   labs(x = NULL, y = "Value", colour = "Tenet show",
        title = "Monthly Russia agenda & stance: Tenet shows vs. control mean (IQR band)",
        subtitle = "Dashed line = payment (Oct 2023). Grey = control mean and interquartile band.") + theme_pub
@@ -235,11 +247,12 @@ Df <- rbindlist(lapply(EXO, function(o){ col <- o[1]
     .(pre = weighted.mean(get(col)[post == 0], n_ment_r[post == 0]),
       post = weighted.mean(get(col)[post == 1], n_ment_r[post == 1])), by = unit][, outcome := o[2]] }))
 Df <- melt(Df, id.vars = c("unit", "outcome"), variable.name = "period", value.name = "val")
+Df[, show := nice_show(unit)]
 fwrite(Df, file.path(SC, "figF_dumbbell_data.csv"))
-pF <- ggplot(Df, aes(val, unit)) +
-  geom_line(aes(group = unit), colour = "grey60") + geom_point(aes(colour = period), size = 3) +
+pF <- ggplot(Df, aes(val, show)) +
+  geom_line(aes(group = show), colour = "grey60") + geom_point(aes(colour = period), size = 3) +
   facet_wrap(~ outcome, scales = "free_x") +
-  scale_colour_manual(values = c("pre" = "grey55", "post" = "#b2182b")) +
+  scale_colour_manual(values = c("pre" = "grey55", "post" = ACCENT)) +
   labs(x = "Mention-weighted value", y = NULL, colour = NULL,
        title = "Per-show change before vs. after payment (Tenet shows)") + theme_pub
 ggsave(file.path(SC, "figF_dumbbell.pdf"), pF, width = 9, height = 4)
@@ -258,21 +271,24 @@ G[, measure := factor(measure, levels = c("total", "positive", "combined"),
                       labels = c("Total Russia mentions", "Positive Russia comments", "Combined stance score"))]
 G <- G[is.finite(val)]
 G[, rk := frank(val, ties.method = "first"), by = measure]
-G[, grp := ifelse(tenet == 1, "Tenet show", "Other program")]
-lab <- G[tenet == 1]
+G[, grp := factor(ifelse(unit %in% TRU, nice_show(unit), "Other program"),
+                  levels = c("The Benny Show", "The Rubin Report", "Tim Pool", "Other program"))]
+G <- rbind(G[grp == "Other program"], G[grp != "Other program"])          # draw Tenet shows on top
 fwrite(G, file.path(SC, "figG_ranked_data.csv"))
+GPAL <- c(SHOWCOL, "Other program" = "grey80")
+GSZ  <- c("The Benny Show" = 2.6, "The Rubin Report" = 2.6, "Tim Pool" = 2.6, "Other program" = 0.7)
+GLW  <- c("The Benny Show" = 0.8, "The Rubin Report" = 0.8, "Tim Pool" = 0.8, "Other program" = 0.3)
 pG <- ggplot(G, aes(val, rk)) +
-  geom_segment(aes(x = 0, xend = val, yend = rk, colour = grp, linewidth = grp), alpha = 0.7) +
+  geom_segment(aes(x = 0, xend = val, yend = rk, colour = grp, linewidth = grp), alpha = 0.8) +
   geom_point(aes(colour = grp, size = grp)) +
-  geom_text(data = lab, aes(label = unit), colour = "#b2182b", size = 2.6, hjust = 1.1) +
   facet_wrap(~ measure, scales = "free", nrow = 1) +
-  scale_colour_manual(values = c("Tenet show" = "#b2182b", "Other program" = "grey78")) +
-  scale_size_manual(values = c("Tenet show" = 2.6, "Other program" = 0.7), guide = "none") +
-  scale_linewidth_manual(values = c("Tenet show" = 0.8, "Other program" = 0.3), guide = "none") +
+  scale_colour_manual(values = GPAL) +
+  scale_size_manual(values = GSZ, guide = "none") + scale_linewidth_manual(values = GLW, guide = "none") +
   labs(x = "Value (programs ranked low to high)", y = NULL, colour = NULL,
        title = "Where the Tenet shows rank among all programs",
-       subtitle = "Each lollipop is one program; the three Tenet shows are highlighted in red.") +
-  theme_pub + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+       subtitle = "Each lollipop is one program; the three Tenet shows are coloured.") +
+  theme_pub + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank()) +
+  guides(colour = guide_legend(override.aes = list(size = 3)))
 ggsave(file.path(SC, "figG_ranked.pdf"), pG, width = 12, height = 5)
 
 cat("WROTE fig1_predicted / figA_forest / figB_eventstudy / figC_sc_trajectory + figD_lollipop / figE_timeseries / figF_dumbbell / figG_ranked\n")

@@ -50,7 +50,7 @@ pH <- ggplot(G, aes(val, rk)) +
   geom_segment(aes(x = 0, xend = val, yend = rk, colour = grp, linewidth = grp), alpha = 0.75) +
   geom_point(aes(colour = grp, size = grp)) +
   facet_grid(measure ~ period, scales = "free") +
-  scale_colour_manual(values = c("Tenet show" = "#b2182b", "Other program" = "grey78")) +
+  scale_colour_manual(values = c("Tenet show" = "#D95F02", "Other program" = "grey78")) +  # Dark2 (colourblind-safe)
   scale_size_manual(values = c("Tenet show" = 2.2, "Other program" = 0.6), guide = "none") +
   scale_linewidth_manual(values = c("Tenet show" = 0.7, "Other program" = 0.25), guide = "none") +
   labs(x = "Value (programs ranked low to high within each panel)", y = NULL, colour = NULL,
