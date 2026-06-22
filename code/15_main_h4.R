@@ -128,21 +128,23 @@ H4b <- rbindlist(list(
   r2("cosine", h4b_cos_twfe, h4b_cos_twfe_ctrl, h4b_cos_twfeM, h4b_cos_twfeM_ctrl, h4b_cos_scm, h4b_cos_scm_ctrl)))
 
 ###############################################################################
-## RANDOMIZATION INFERENCE (controlled FULL spec) -- 3-treated-cluster honest p.
+## RANDOMIZATION INFERENCE -- DISABLED (kept for reviewers only). The 3-treated
+## permutation null is very wide; clustered SEs are the headline inference. To
+## re-enable for a revision, uncomment the block below (appends p_RI_ctrl).
 ###############################################################################
-RI_B <- 999
-ri_lvl <- function(d, ycol){ d <- copy(d); u <- unique(d$unit); nt <- length(intersect(u, TRU))
-  f <- as.formula(paste0(ycol, " ~ tnt + log_words + log_aud_m | mfac"))
-  d[, tnt := as.integer(unit %in% TRU)]; real <- coef(feols(f, d))["tnt"]
-  bs <- replicate(RI_B, { d[, tnt := as.integer(unit %in% sample(u, nt))]; tryCatch(coef(feols(f, d))["tnt"], error = function(e) NA_real_) })
-  round((1 + sum(abs(bs) >= abs(real), na.rm = TRUE)) / (1 + sum(is.finite(bs))), 4) }
-ri_did <- function(d, ycol){ d <- copy(d); u <- unique(d$unit); nt <- length(intersect(u, TRU))
-  f <- as.formula(paste0(ycol, " ~ tnp + log_words + log_aud_m | unit+month"))
-  d[, tnp := as.integer(unit %in% TRU) * post]; real <- coef(feols(f, d))["tnp"]
-  bs <- replicate(RI_B, { d[, tnp := as.integer(unit %in% sample(u, nt)) * post]; tryCatch(coef(feols(f, d))["tnp"], error = function(e) NA_real_) })
-  round((1 + sum(abs(bs) >= abs(real), na.rm = TRUE)) / (1 + sum(is.finite(bs))), 4) }
-H4a[, p_RI_ctrl := c(ri_lvl(a_j,"jsd"), ri_lvl(a_k,"kl_sm"), ri_lvl(a_c,"cosine"))]
-H4b[, p_RI_ctrl := c(ri_did(b_j,"jsd"), ri_did(b_k,"kl_sm"), ri_did(b_c,"cosine"))]
+# RI_B <- 999
+# ri_lvl <- function(d, ycol){ d <- copy(d); u <- unique(d$unit); nt <- length(intersect(u, TRU))
+#   f <- as.formula(paste0(ycol, " ~ tnt + log_words + log_aud_m | mfac"))
+#   d[, tnt := as.integer(unit %in% TRU)]; real <- coef(feols(f, d))["tnt"]
+#   bs <- replicate(RI_B, { d[, tnt := as.integer(unit %in% sample(u, nt))]; tryCatch(coef(feols(f, d))["tnt"], error = function(e) NA_real_) })
+#   round((1 + sum(abs(bs) >= abs(real), na.rm = TRUE)) / (1 + sum(is.finite(bs))), 4) }
+# ri_did <- function(d, ycol){ d <- copy(d); u <- unique(d$unit); nt <- length(intersect(u, TRU))
+#   f <- as.formula(paste0(ycol, " ~ tnp + log_words + log_aud_m | unit+month"))
+#   d[, tnp := as.integer(unit %in% TRU) * post]; real <- coef(feols(f, d))["tnp"]
+#   bs <- replicate(RI_B, { d[, tnp := as.integer(unit %in% sample(u, nt)) * post]; tryCatch(coef(feols(f, d))["tnp"], error = function(e) NA_real_) })
+#   round((1 + sum(abs(bs) >= abs(real), na.rm = TRUE)) / (1 + sum(is.finite(bs))), 4) }
+# H4a[, p_RI_ctrl := c(ri_lvl(a_j,"jsd"), ri_lvl(a_k,"kl_sm"), ri_lvl(a_c,"cosine"))]
+# H4b[, p_RI_ctrl := c(ri_did(b_j,"jsd"), ri_did(b_k,"kl_sm"), ri_did(b_c,"cosine"))]
 
 ## ---- show & save ------------------------------------------------------------
 cat("\n===== H4a (pre-payment divergence level) =====\n"); print(H4a)

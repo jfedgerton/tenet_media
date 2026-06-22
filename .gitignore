@@ -12,6 +12,7 @@
 # 2) re-include the things we DO want to track
 !/code/
 !/data/
+!/tex/
 !/README.md
 !/requirements.txt
 !/.gitignore
@@ -23,6 +24,11 @@
 /data/sc_results/*
 !/data/sc_results/opus_c0_corpus_labeled.parquet   # the labeled sentences
 !/data/sc_results/*.csv                             # show x month panels + result tables
+
+# 3b) inside tex/: keep the diagram source + compiled PDF, drop LaTeX build junk
+/tex/*
+!/tex/*.tex
+!/tex/*.pdf
 
 # 4) inside code/: drop caches, archived/legacy code, and transfer leftovers
 code/__pycache__/
