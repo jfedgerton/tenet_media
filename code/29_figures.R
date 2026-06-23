@@ -140,19 +140,21 @@ es_one <- function(dat, ycol, ylab, mm = TRUE){
   ct <- as.data.table(coeftable(m), keep.rownames = "term")[grepl("^bin::", term)]
   ct[, bin := as.integer(sub("bin::(-?\\d+):tenet", "\\1", term))]
   rbind(data.table(bin = -6, Estimate = 0, `Std. Error` = 0), ct[, .(bin, Estimate, `Std. Error`)], fill = TRUE)[, outcome := ylab][] }
-FB <- rbind(es_one(P, "c_score", "H2: Combined stance score"),
-            es_one(P, "prop_comb", "H3: Combined agenda share", mm = FALSE),
-            es_one(H, "jsd", "H4: Agenda divergence (JSD)", mm = FALSE))
+FB <- rbind(es_one(P, "r_pos", "Russia positive"),
+            es_one(P, "c_pos", "Combined positive"),
+            es_one(P, "prop_comb", "Combined topic proportion", mm = FALSE),
+            es_one(H, "jsd", "JS divergence", mm = FALSE))
+FB[, outcome := factor(outcome, levels = c("Russia positive", "Combined positive", "Combined topic proportion", "JS divergence"))]
 setnames(FB, "Std. Error", "se"); FB[, `:=`(lo = Estimate - 1.96*se, hi = Estimate + 1.96*se)]
 fwrite(FB, file.path(SC, "figB_eventstudy_data.csv"))
 pB <- ggplot(FB, aes(bin, Estimate)) +
   geom_hline(yintercept = 0, colour = "grey60") + geom_vline(xintercept = 0, linetype = 2, colour = ACCENT) +
   geom_ribbon(aes(ymin = lo, ymax = hi), alpha = 0.15) + geom_line() + geom_point(size = 1.8) +
-  facet_wrap(~ outcome, scales = "free_y", nrow = 1) +
+  facet_wrap(~ outcome, scales = "free_y", nrow = 2) +
   labs(x = "Months relative to payment (6-month bins, 0 = Oct 2023)", y = "Tenet x period (coef.)",
        title = "Event study: pre-payment parallel trends and post-payment (non-)effect") +
   theme_pub
-ggsave(file.path(SC, "figB_eventstudy.pdf"), pB, width = 12, height = 4)
+ggsave(file.path(SC, "figB_eventstudy.pdf"), pB, width = 9, height = 7)
 
 ###############################################################################
 ## FIGURE C (APPENDIX): synthetic-control trajectory (treated vs synthetic)
@@ -168,21 +170,58 @@ scm_path <- function(pan, col, wcol){
   good <- which(apply(dm, 2, function(x) all(is.finite(x)) & sd(x) > 0)); if (length(good) < 5 || anyNA(y1)) return(NULL)
   Y0 <- dm[, good, drop = FALSE]; w <- scm_w(Y0[pre, , drop = FALSE], y1[pre])
   data.table(month = mo, treated = y1, synth = as.vector(Y0 %*% w)) }
-scC <- rbind(
-  if (!is.null(x <- scm_path(P, "c_score", "n_ment_r"))) x[, outcome := "H2: Combined stance score"],
-  if (!is.null(x <- scm_path(H, "jsd", "n_sentences"))) x[, outcome := "H4: Agenda divergence (JSD)"], fill = TRUE)
+SCM_OUT <- list(c("r_pos","n_ment_r","Russia positive"), c("c_pos","n_ment_r","Combined positive"),
+                c("prop_comb","n_words","Combined topic proportion"), c("jsd","n_sentences","JS divergence"))
+scC <- rbindlist(lapply(SCM_OUT, function(o){ pan <- if (o[1] == "jsd") H else P
+  x <- scm_path(pan, o[1], o[2]); if (!is.null(x)) x[, outcome := o[3]] }), fill = TRUE)
 if (!is.null(scC) && nrow(scC)){
   FC <- melt(scC, id.vars = c("month", "outcome"), measure.vars = c("treated", "synth"), variable.name = "series", value.name = "value")
   FC[, series := factor(series, labels = c("Treated (Tenet)", "Synthetic control"))]
+  FC[, outcome := factor(outcome, levels = sapply(SCM_OUT, `[`, 3))]
   fwrite(FC, file.path(SC, "figC_sc_trajectory_data.csv"))
   pC <- ggplot(FC, aes(month, value, colour = series, linetype = series)) +
     geom_vline(xintercept = as.numeric(TREAT), linetype = 2, colour = "grey55") + geom_line(linewidth = 0.7) +
-    facet_wrap(~ outcome, scales = "free_y", nrow = 1) +
+    facet_wrap(~ outcome, scales = "free_y", nrow = 2) +
     scale_colour_manual(values = c("Treated (Tenet)" = ACCENT, "Synthetic control" = "grey35")) +
-    scale_x_date(date_breaks = "1 year", date_labels = "%b %Y") +
+    scale_x_date(date_breaks = "1 year", date_labels = "%b %y") +
     labs(x = NULL, y = "Outcome", colour = NULL, linetype = NULL,
          title = "Synthetic-control fit: treated composite vs. synthetic counterfactual") + theme_pub
-  ggsave(file.path(SC, "figC_sc_trajectory.pdf"), pC, width = 9, height = 4)
+  ggsave(file.path(SC, "figC_sc_trajectory.pdf"), pC, width = 9, height = 7)
+}
+
+###############################################################################
+## FIGURE J (APPENDIX): in-space placebo gaps -- treated vs. donor placebos.
+##   For each outcome: treated composite gap (treated - synthetic) over time, plus
+##   the gap path for every control unit treated as a placebo (grey). The standard
+##   synthetic-control inference figure (Abadie et al.).
+###############################################################################
+scm_gappath <- function(pan, col, wcol, lab){
+  dd <- pan[!is.na(get(col)) & month >= SCM_WIN]; tr <- dd[tenet == 1]; if (!nrow(tr)) return(NULL)
+  comp <- tr[, .(y = weighted.mean(get(col), pmax(get(wcol), 1))), by = month]; mo <- sort(comp$month); pre <- mo < TREAT
+  if (sum(pre) < 6 || sum(!pre) < 2) return(NULL); y1 <- comp$y[match(mo, comp$month)]
+  don <- dcast(dd[tenet == 0], month ~ unit, value.var = col); don <- don[match(mo, don$month)]; dm <- as.matrix(don[, -1])
+  for (j in seq_len(ncol(dm))){ v <- dm[, j]; if (anyNA(v)) { v[is.na(v)] <- mean(v, na.rm = TRUE); dm[, j] <- v } }
+  good <- which(apply(dm, 2, function(x) all(is.finite(x)) & sd(x) > 0)); if (length(good) < 5 || anyNA(y1)) return(NULL)
+  Y0 <- dm[, good, drop = FALSE]
+  fit <- function(y, X){ w <- scm_w(X[pre, , drop = FALSE], y[pre]); y - as.vector(X %*% w) }   # gap path
+  rows <- list(data.table(month = mo, gap = fit(y1, Y0), id = "__treated__", grp = "Tenet (treated)"))
+  for (j in seq_len(ncol(Y0)))
+    rows[[length(rows) + 1]] <- data.table(month = mo, gap = fit(Y0[, j], Y0[, -j, drop = FALSE]), id = colnames(Y0)[j], grp = "Control placebo")
+  rbindlist(rows)[, outcome := lab][] }
+GP <- rbindlist(lapply(SCM_OUT, function(o){ pan <- if (o[1] == "jsd") H else P; scm_gappath(pan, o[1], o[2], o[3]) }), fill = TRUE)
+if (!is.null(GP) && nrow(GP)){
+  GP[, outcome := factor(outcome, levels = sapply(SCM_OUT, `[`, 3))]
+  fwrite(GP, file.path(SC, "figJ_scm_placebo_data.csv"))
+  pJ <- ggplot() +
+    geom_hline(yintercept = 0, colour = "grey80", linewidth = 0.3) +
+    geom_vline(xintercept = as.numeric(TREAT), linetype = 2, colour = "grey55") +
+    geom_line(data = GP[grp == "Control placebo"], aes(month, gap, group = id), colour = "grey75", linewidth = 0.25, alpha = 0.6) +
+    geom_line(data = GP[grp == "Tenet (treated)"], aes(month, gap, group = id), colour = ACCENT, linewidth = 0.9) +
+    facet_wrap(~ outcome, scales = "free_y", nrow = 2) + scale_x_date(date_breaks = "1 year", date_labels = "%b %y") +
+    labs(x = NULL, y = "Gap (unit - synthetic)",
+         title = "Synthetic-control in-space placebo gaps",
+         subtitle = "Grey = each control unit as a placebo; red = Tenet composite. Dashed line = payment (Oct 2023).") + theme_pub
+  ggsave(file.path(SC, "figJ_scm_placebo.pdf"), pJ, width = 9, height = 7)
 }
 
 ###############################################################################

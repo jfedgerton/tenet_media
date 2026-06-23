@@ -29,7 +29,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 SEED = 123
 COLLAB = "/storage/group/LiberalArts/default/jfe4_collab/podcast"
 SC = COLLAB + "/data/sc_results"
-MODEL_DIR = COLLAB + "/data/topic_model"
+MODEL_DIR = COLLAB + "/data/topic_model/topic_model"   # BERTopic model is in the nested dir
 CORPUS = COLLAB + "/data/corpus_with_topics.parquet"
 PANEL = SC + "/baseline_panel.csv"
 RELEVANT = [78, 79]
