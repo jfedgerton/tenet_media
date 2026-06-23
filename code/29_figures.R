@@ -85,13 +85,13 @@ fwrite(F1, file.path(SC, "fig1_predicted_data.csv"))
 p1 <- ggplot(F1, aes(group, pred, colour = group)) +
   geom_hline(yintercept = 0, linewidth = 0.3, colour = "grey70") +
   geom_point(size = 3) + geom_errorbar(aes(ymin = lo, ymax = hi), width = 0.16, linewidth = 0.7) +
-  facet_wrap(~ panel, scales = "free_y", nrow = 1) +
-  scale_colour_manual(values = c("Non-Tenet" = "grey45", "Tenet" = ACCENT)) +
+  facet_wrap(~ panel, scales = "free_y", nrow = 2) +
+  scale_colour_manual(values = c("Non-Tenet" = "grey45", "Tenet" = ACCENT), guide = "none") +
   labs(x = NULL, y = "Predicted outcome", colour = NULL,
        title = "Predicted outcome for a Tenet vs. non-Tenet show, by hypothesis",
        subtitle = "Controls held at observed values. Bars = 95% CI on the Tenet gap (H1 level; H2-H4 treated x post).") +
   theme_pub
-ggsave(file.path(SC, "fig1_predicted.pdf"), p1, width = 12, height = 4)
+ggsave(file.path(SC, "fig1_predicted.pdf"), p1, width = 8, height = 7)
 
 ###############################################################################
 ## FIGURE A (APPENDIX): forest of all outcomes, faceted by hypothesis
@@ -179,7 +179,7 @@ if (!is.null(scC) && nrow(scC)){
     geom_vline(xintercept = as.numeric(TREAT), linetype = 2, colour = "grey55") + geom_line(linewidth = 0.7) +
     facet_wrap(~ outcome, scales = "free_y", nrow = 1) +
     scale_colour_manual(values = c("Treated (Tenet)" = ACCENT, "Synthetic control" = "grey35")) +
-    scale_x_date(date_labels = "%Y") +
+    scale_x_date(date_breaks = "1 year", date_labels = "%b %Y") +
     labs(x = NULL, y = "Outcome", colour = NULL, linetype = NULL,
          title = "Synthetic-control fit: treated composite vs. synthetic counterfactual") + theme_pub
   ggsave(file.path(SC, "figC_sc_trajectory.pdf"), pC, width = 9, height = 4)
@@ -220,7 +220,7 @@ pI <- ggplot(FI, aes(month, value, colour = series, linetype = series)) +
   geom_line(linewidth = 0.6, na.rm = TRUE) +
   scale_colour_manual(values = c("Treated" = ACCENT, "Counterfactual" = "#0072B2")) +
   scale_linetype_manual(values = c("Treated" = 1, "Counterfactual" = 2)) +
-  scale_x_date(date_labels = "%y") +
+  scale_x_date(date_breaks = "1 year", date_labels = "%b %y") +
   labs(x = NULL, y = "Outcome (centred on pre-payment mean)", colour = NULL, linetype = NULL,
        title = "Parallel trends: treated vs. counterfactual, centred on the pre-payment mean") +
   theme_pub + theme(strip.text = element_text(size = 10))
@@ -278,7 +278,7 @@ pE <- ggplot() +
   geom_line(data = TS, aes(month, m), colour = "grey40") +
   geom_line(data = TT, aes(month, val, colour = show), linewidth = .6) +
   geom_vline(xintercept = as.numeric(TREAT), linetype = 2, colour = "grey30") +
-  facet_wrap(~ outcome, scales = "free_y", nrow = 1) + scale_x_date(date_labels = "%Y") +
+  facet_wrap(~ outcome, scales = "free_y", nrow = 1) + scale_x_date(date_breaks = "1 year", date_labels = "%b %Y") +
   scale_colour_manual(values = SHOWCOL) +
   labs(x = NULL, y = "Value", colour = "Tenet show",
        title = "Monthly Russia agenda & stance: Tenet shows vs. control mean (IQR band)",
