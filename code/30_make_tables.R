@@ -156,7 +156,23 @@ t3 <- c("% requires \\usepackage{booktabs}", "\\begin{table}[!ht]\\centering\\fo
   "\\midrule", ferow, nrow_, "\\bottomrule",
   "\\multicolumn{13}{l}{\\scriptsize *** $p<.01$, ** $p<.05$, * $p<.10$. SCM $p$ from in-space placebo.} \\\\",
   "\\end{tabular}\\end{table}")
-writeLines(t3, file.path(SC, "table3_did_all.tex"))
+writeLines(t3, file.path(SC, "table3_did_full.tex"))     # full-coefficient (12-col) alternative
+
+## ---- MAIN Table 3: conventional ATT-summary (estimators = rows, outcomes = cols) ----
+attrow <- function(lbl, g){ e1 <- vapply(EST, function(e) g(e)[1], ""); e2 <- vapply(EST, function(e) g(e)[2], "")
+  c(paste0(lbl, " & ", paste(e1, collapse = " & "), " \\\\"), paste0(" & ", paste(e2, collapse = " & "), " \\\\[2pt]")) }
+ts <- c("% requires \\usepackage{booktabs}", "\\begin{table}[!ht]\\centering",
+  "\\caption{Post-payment treatment effects (ATT), main outcomes (H2--H4), across estimators. Two-way FE and matched DiD report the Treated$\\times$Post coefficient with clustered SE in parentheses; synthetic control reports the treated-vs-synthetic gap with an in-space placebo $p$. TWFE and matched include log words, log audience, and unit and month fixed effects.}",
+  "\\label{tab:did_main}", "\\begin{tabular}{l cccc}", "\\toprule",
+  " & Russia & Combined & Combined topic & JS \\\\",
+  " & positive & positive & proportion & divergence \\\\", "\\midrule",
+  attrow("Two-way fixed effects", function(e) cse(e$tw, "tp")),
+  attrow("Matched DiD",           function(e) cse(e$mt, "tp")),
+  attrow("Synthetic control",     function(e) c(scmE(e), scmP(e))),
+  "\\bottomrule",
+  "\\multicolumn{5}{l}{\\footnotesize *** $p<.01$, ** $p<.05$, * $p<.10$. Synthetic-control $p$ from in-space placebo.} \\\\",
+  "\\end{tabular}\\end{table}")
+writeLines(ts, file.path(SC, "table3_did_all.tex"))
 
 ## ---- TABLE 3 (SCM-only variant): synthetic-control DiD, main outcomes -------
 labs4 <- c("Russia positive", "Combined positive", "Combined topic share", "JS divergence")

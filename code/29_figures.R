@@ -224,10 +224,10 @@ pI <- ggplot(FI, aes(month, value, colour = series, linetype = series)) +
   labs(x = NULL, y = "Outcome (centred on pre-payment mean)", colour = NULL, linetype = NULL,
        title = "Parallel trends: treated vs. counterfactual, centred on the pre-payment mean") +
   theme_pub + theme(strip.text = element_text(size = 10))
-pI <- pI + if (requireNamespace("ggh4x", quietly = TRUE))
-  ggh4x::facet_grid2(estimator ~ outcome, scales = "free", independent = "y") else
-  facet_grid(estimator ~ outcome, scales = "free_y")
-ggsave(file.path(SC, "figI_parallel.pdf"), pI, width = 12, height = 7.5)
+## outcomes as rows, estimators as columns: free y per outcome row -> each measure
+## gets its own scale, estimators stay comparable within a row.
+pI <- pI + facet_grid(outcome ~ estimator, scales = "free_y")
+ggsave(file.path(SC, "figI_parallel.pdf"), pI, width = 8.5, height = 10)
 ###############################################################################
 ## EXPLORATORY (pick one for the manuscript): per-show Russia/Combined positivity
 ##   figD_lollipop    -- the 3 Tenet shows vs control reference levels (lollipop)
