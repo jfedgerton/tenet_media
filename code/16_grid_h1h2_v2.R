@@ -1,37 +1,19 @@
 ###############################################################################
-# 16_grid_h1h2.R  --  MASTER robustness grid for H1 (pre-payment level) and
-# H2 (post-payment DiD), one-factor-at-a-time off the MAIN spec (13_main_h1h3.R).
-# Supersedes the old probshift-only 16 AND 26_min_mention_sweep.R (folded in here).
-#
-# SAME BASIS AS 13/15:  time-varying monthly audience (log_aud_m) + total words
-# (log_words), month FE, TWO-WAY clustering (H1: month+unit ; H2: unit+month).
-#
-# Spec set per outcome (mirrors 13 exactly):
-#   H1: simple | simpleM | ctrl | ctrlM            (term = tenet; pre-period, |mfac)
-#   H2: twfe | twfe_ctrl | twfeM | twfeM_ctrl | scm | scm_ctrl   (term = tp; |unit+month)
-#   "simple/twfe"  = NO CONTROLS (the cell the old grid was missing)
-#   "ctrl"         = + log_words + log_aud_m
-#   "M"            = Mahalanobis-matched donor set (pre-period audience+words, per date)
-#   "scm_ctrl"     = SCM on the outcome residualized on log_words | unit+month
-#
-# Outcomes (15): {score, pos, net} x {Russia, Ukraine, Combined}  PLUS
-#                {vol_pos, vol_posneg} x {Russia, Ukraine, Combined}.
-#
-# AXES SWEPT (each perturbed off baseline = shift 0 / min_ment 5 / conditional):
-#   (A) PROB MASS-TRANSFER : 13 Russia ops x 13 Ukraine ops x shift seq(0,0.30,0.025)
-#   (B) MIN-MENTION        : {0,1,3,5,10,20}
-#   (C) MISSING->0 CODING  : {conditional, zero}   (B x C crossed; A holds at 5/conditional)
-#   (D) TREATMENT DATE     : {2022-12-01 RT-relationship, 2023-10-01 first-payment,
-#                             2023-11-01 join/launch}  -- swept in BOTH A and B.
-#
-# Input : data/sc_results/probs_4class.csv  (+ audience_monthly.csv, loso_volume.csv)
-# Output: data/sc_results/master_grid_h1h2.csv   Seed 123.  PI: Jared Edgerton (PSU).
+# 16_grid_h1h2_v2.R  --  PARALLEL/FASTER variant of 16_grid_h1h2.R.
+# Identical analysis; only the execution is improved:
+#   * mc.preschedule = FALSE   -> dynamic load balancing + fresh fork per cell
+#                                 (caps memory: each cell's RAM is freed on exit)
+#   * gc(FALSE) per cell        -> extra memory insurance
+#   * setFixest_notes(FALSE)    -> stop the singleton/NA note flood in the log
+#   * per-cell progress marker  -> "[cellA i/N]" / "[cellB i/N]" so % done is countable
+#   * incremental checkpoints   -> writes master_grid_axisA_v2.csv after axis A and
+#                                 master_grid_axisB_v2.csv after axis B (never lose a run)
+#   * OUTPUT -> master_grid_h1h2_v2.csv  (separate name; will NOT collide with the
+#                                         original 16_grid_h1h2.R run writing the canonical file)
+# Seed 123.  PI: Jared Edgerton (PSU).
 ###############################################################################
 suppressMessages({ library(data.table); library(fixest); library(Matching); library(quadprog); library(parallel) })
-set.seed(123); setDTthreads(1); setFixest_notes(FALSE)   # quiet singleton/NA note flood
-## Execution notes: mclapply uses mc.preschedule=FALSE (fresh fork per cell -> load
-## balancing + per-cell memory release), gc(FALSE) per cell, per-cell progress markers
-## ([cellA i/N] / [cellB i/N]), and incremental checkpoints after each axis.
+set.seed(123); setDTthreads(1); setFixest_notes(FALSE)
 NC <- as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", "8"))
 SCM_IN_SHIFT <- FALSE       # SCM is fully swept in axis B (dates x min_ment x coding);
                             # set TRUE to ALSO run it under every label-noise cell (very heavy).
@@ -182,7 +164,7 @@ fit_cell <- function(pan, td, min_ment, coding, do_scm) {
 ## AXIS A -- probability mass-transfer (min_ment=5, conditional), all 3 dates
 ###############################################################################
 gridA <- as.data.table(expand.grid(rus_op = 0:12, ukr_op = 0:12, shift = seq(0, 0.30, 0.025), KEEP.OUT.ATTRS = FALSE))
-cat("AXIS A cells", nrow(gridA), "x dates", length(TREAT_DATES), "cores", NC, "\n")
+cat("AXIS A cells", nrow(gridA), "x dates", length(TREAT_DATES), "cores", NC, "preschedule FALSE\n")
 runA <- function(i) {
   pan <- build_panel(gridA$rus_op[i], gridA$ukr_op[i], gridA$shift[i])
   res <- rbindlist(lapply(TREAT_DATES, function(td)
@@ -194,8 +176,8 @@ runA <- function(i) {
   res
 }
 resA <- rbindlist(mclapply(seq_len(nrow(gridA)), runA, mc.cores = NC, mc.preschedule = FALSE), fill = TRUE)
-fwrite(resA, file.path(SC, "master_grid_axisA.csv"))         # checkpoint
-cat("AXIS A rows", nrow(resA), "-> master_grid_axisA.csv (checkpoint)\n")
+fwrite(resA, file.path(SC, "master_grid_axisA_v2.csv"))         # CHECKPOINT
+cat("AXIS A rows", nrow(resA), "-> master_grid_axisA_v2.csv (checkpoint)\n")
 
 ###############################################################################
 ## AXIS B/C -- min-mention {0,1,3,5,10,20} x coding {conditional,zero}, shift 0,
@@ -210,8 +192,8 @@ runB <- function(i) {
   res
 }
 resB <- rbindlist(mclapply(seq_len(nrow(gridB)), runB, mc.cores = NC, mc.preschedule = FALSE), fill = TRUE)
-fwrite(resB, file.path(SC, "master_grid_axisB.csv"))         # checkpoint
-cat("AXIS B rows", nrow(resB), "-> master_grid_axisB.csv (checkpoint)\n")
+fwrite(resB, file.path(SC, "master_grid_axisB_v2.csv"))         # CHECKPOINT
+cat("AXIS B rows", nrow(resB), "-> master_grid_axisB_v2.csv (checkpoint)\n")
 
 ###############################################################################
 ## combine + label + write
@@ -220,5 +202,5 @@ fin <- rbind(resA, resB, fill = TRUE)
 fin[, rus_op_name := OPNAME[rus_op + 1L]]; fin[, ukr_op_name := OPNAME[ukr_op + 1L]]
 fin[, sig := fifelse(is.na(p), "NA", fifelse(p < 0.01, "***", fifelse(p < 0.05, "**", fifelse(p < 0.1, "*", "ns"))))]
 setcolorder(fin, c("axis","treat_date","min_ment","coding","rus_op","rus_op_name","ukr_op","ukr_op_name","shift","set","metric","hyp","spec","est","se","p","sig"))
-fwrite(fin, file.path(SC, "master_grid_h1h2.csv"))
-cat("ROWS", nrow(fin), "-> master_grid_h1h2.csv  DONE_GRID\n")
+fwrite(fin, file.path(SC, "master_grid_h1h2_v2.csv"))
+cat("ROWS", nrow(fin), "-> master_grid_h1h2_v2.csv  DONE_GRID\n")
