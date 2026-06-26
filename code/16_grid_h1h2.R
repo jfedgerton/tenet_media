@@ -50,6 +50,7 @@ S[, month := as.Date(format(date, "%Y-%m-01"))]; S[, unit := fifelse(show %in% T
 Rpp <- S$russia_p_pos; Rpn <- S$russia_p_neg; Rpu <- S$russia_p_neu; Rpx <- S$russia_p_unment
 Upp <- S$ukraine_p_pos; Upn <- S$ukraine_p_neg; Upu <- S$ukraine_p_neu; Upx <- S$ukraine_p_unment
 unit_v <- S$unit; month_v <- S$month
+rm(S); gc(FALSE)   # drop the big sentence-level table once its columns are extracted
 
 ## ---- time-varying controls (same sources as 13) ----------------------------
 AM <- fread(file.path(SC, "audience_monthly.csv")); AM[, month := as.Date(month)]
@@ -82,15 +83,21 @@ OPNAME <- c("none","Pos>Neu","Neg>Neu","Neu>Pos","Neu>Neg","Neu>NegPos","NegPos>
 ## Produces conditional outcomes (r_score..c_net), volume outcomes, AND zero-coded
 ## (unmentioned=0) versions, plus n_ment_r/u, n_total, log_aud_m, log_words.
 build_panel <- function(ro, uo, s) {
-  R <- apply_op(Rpp, Rpn, Rpu, Rpx, ro, s); U <- apply_op(Upp, Upn, Upu, Upx, uo, s)
-  Rm <- max.col(cbind(R[[1]], R[[2]], R[[3]], R[[4]]), ties.method = "first")
-  Um <- max.col(cbind(U[[1]], U[[2]], U[[3]], U[[4]]), ties.method = "first")
+  ## Process Russia then Ukraine ops sequentially and free each big sentence-level
+  ## intermediate immediately, so 48 parallel workers don't balloon RAM (the per-cell
+  ## peak stays low). Holds ~4 sentence vectors + sd instead of ~10.
+  R <- apply_op(Rpp, Rpn, Rpu, Rpx, ro, s)
+  Rm <- max.col(cbind(R[[1]], R[[2]], R[[3]], R[[4]]), ties.method = "first"); r_sc <- R[[1]] - R[[2]]; rm(R)
+  U <- apply_op(Upp, Upn, Upu, Upx, uo, s)
+  Um <- max.col(cbind(U[[1]], U[[2]], U[[3]], U[[4]]), ties.method = "first"); u_sc <- U[[1]] - U[[2]]; rm(U); gc(FALSE)
   sd <- data.table(unit = unit_v, month = month_v,
-    r_ment = Rm != 4L, r_sc = R[[1]] - R[[2]], r_p = Rm == 1L, r_neg = Rm == 2L, r_o = c(1L,-1L,0L,0L)[Rm],
-    u_ment = Um != 4L, u_sc = U[[1]] - U[[2]], u_p = Um == 1L, u_neg = Um == 2L, u_o = c(1L,-1L,0L,0L)[Um])
+    r_ment = Rm != 4L, r_sc = r_sc, r_p = Rm == 1L, r_neg = Rm == 2L, r_o = c(1L,-1L,0L,0L)[Rm],
+    u_ment = Um != 4L, u_sc = u_sc, u_p = Um == 1L, u_neg = Um == 2L, u_o = c(1L,-1L,0L,0L)[Um])
+  rm(Rm, Um, r_sc, u_sc); gc(FALSE)
   aggR <- sd[r_ment == TRUE, .(n_ment_r = .N, r_score = mean(r_sc), r_pos = mean(r_p), r_net = mean(r_o)), by = .(unit, month)]
   aggU <- sd[u_ment == TRUE, .(n_ment_u = .N, u_score = mean(u_sc), u_pos = mean(u_p), u_net = mean(u_o)), by = .(unit, month)]
   aggV <- sd[, .(n_total = .N, vol_pos_r = sum(r_p), vol_neg_r = sum(r_neg), vol_pos_u = sum(u_p), vol_neg_u = sum(u_neg)), by = .(unit, month)]
+  rm(sd); gc(FALSE)
   pan <- merge(merge(aggV, aggR, by = c("unit","month"), all.x = TRUE), aggU, by = c("unit","month"), all.x = TRUE)
   for (cc in c("n_ment_r","n_ment_u","vol_pos_r","vol_neg_r","vol_pos_u","vol_neg_u")) pan[is.na(get(cc)), (cc) := 0L]
   pan[, tenet := as.integer(unit %in% TRU)]
