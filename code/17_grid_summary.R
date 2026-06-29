@@ -71,7 +71,8 @@ B1[, panel := paste0(hyp, ": ", set, " positivity")]
 B1[, coding_lab := factor(coding, levels = c("conditional", "zero"),
                           labels = c("Conditional (mention-months)", "Missing = 0"))]
 B1[, treat := factor(treat_date)]
-p2 <- ggplot(B1, aes(min_ment, est, colour = coding_lab, linetype = treat, group = interaction(coding, treat))) +
+B1[, mmf := factor(min_ment, levels = c(0, 1, 3, 5, 10, 20))]   # even x-spacing (thresholds are uneven)
+p2 <- ggplot(B1, aes(mmf, est, colour = coding_lab, linetype = treat, group = interaction(coding, treat))) +
   geom_hline(yintercept = 0, colour = "grey60") +
   geom_line(linewidth = 0.6) + geom_point(size = 1.6) +
   facet_wrap(~ panel, scales = "free_y", nrow = 2) +
