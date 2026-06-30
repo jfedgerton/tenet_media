@@ -24,6 +24,7 @@ CO <- "/storage/group/LiberalArts/default/jfe4_collab/podcast"; SC <- file.path(
 TREAT <- as.Date("2023-10-01"); MINMENT <- 5; B_RI <- 2000
 TIM <- c("timcast_irl", "tim_pool_daily_news", "the_culture_war_podcast_with_tim_pool")
 TRU <- c("tim_pool", "the_benny_show", "the_rubin_report")
+BEN <- c("the_benny_show", "benny_johnson_arena")   # Tenet Arena feed pooled into Benny
 norm <- function(x) gsub("[^a-z0-9]", "", tolower(x))
 
 P <- fread(file.path(SC, "baseline_panel.csv")); P[, month := as.Date(month)]
@@ -38,8 +39,9 @@ P[, log_aud := log(sapply(unit, ua))]
 # total-words (time-varying); tim_pool = MEAN monthly volume across the three feeds
 V <- fread(file.path(SC, "loso_volume.csv")); V[, month := as.Date(month)]
 vt <- V[show %in% TIM, .(n_sent_total = mean(n_sent_total)), by = month][, unit := "tim_pool"]
-vo <- V[!(show %in% TIM), .(unit = show, month, n_sent_total)]
-VV <- rbind(vt[, .(unit, month, n_sent_total)], vo)
+vb <- V[show %in% BEN, .(n_sent_total = mean(n_sent_total)), by = month][, unit := "the_benny_show"]
+vo <- V[!(show %in% c(TIM, BEN)), .(unit = show, month, n_sent_total)]
+VV <- rbind(vt[, .(unit, month, n_sent_total)], vb[, .(unit, month, n_sent_total)], vo)
 P <- merge(P, VV, by = c("unit","month"), all.x = TRUE); P[, log_words := log(n_sent_total)]
 
 outcomes <- list(c("Russia","score","r_score"),c("Russia","pos","r_pos"),c("Russia","net","r_net"),

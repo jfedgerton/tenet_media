@@ -29,6 +29,7 @@ COLLAB = "/storage/group/LiberalArts/default/jfe4_collab/podcast"; SC = COLLAB +
 TREAT = pd.Timestamp("2023-10-01"); TRUNC = pd.Timestamp("2024-09-01"); START = pd.Timestamp("2018-01-01")
 TIM = {"timcast_irl", "tim_pool_daily_news", "the_culture_war_podcast_with_tim_pool"}
 TRU = {"tim_pool", "the_benny_show", "the_rubin_report"}
+BEN = {"the_benny_show", "benny_johnson_arena"}   # Tenet Arena feed pooled into Benny
 ORD = {"positive": 1, "neutral": 0, "negative": -1}
 
 cols = ["show", "date", "topic", "russia_label", "russia_p_pos", "russia_p_neg",
@@ -37,7 +38,7 @@ df = pd.read_parquet(SC + "/opus_c0_corpus_labeled.parquet", columns=cols)
 df["date"] = pd.to_datetime(df["date"], errors="coerce"); df = df.dropna(subset=["date"])
 df = df[(df["date"] >= START) & (df["date"] < TRUNC)].copy()
 df["month"] = df["date"].values.astype("datetime64[M]")
-df["unit"] = df["show"].map(lambda s: "tim_pool" if s in TIM else s)
+df["unit"] = df["show"].map(lambda s: "tim_pool" if s in TIM else ("the_benny_show" if s in BEN else s))
 df["treated"] = df["unit"].isin(TRU).astype(int)
 df["rsc"] = df["russia_p_pos"] - df["russia_p_neg"]
 df["usc"] = df["ukraine_p_pos"] - df["ukraine_p_neg"]
@@ -118,6 +119,7 @@ try:
     keymap = {nrm(u): u for u in units}
     for t in TIM:
         keymap[nrm(t)] = "tim_pool"                       # the 3 Tim feeds -> tim_pool
+    keymap[nrm("benny_johnson_arena")] = "the_benny_show"  # Arena -> Benny
     stt["ukey"] = stt["title"].map(lambda s: keymap.get(nrm(s)))
     id2unit = stt.dropna(subset=["ukey"])[["podcast_id_dd", "ukey"]].copy()
     # coerce the merge key to a common numeric dtype: the static file has a mixed-type

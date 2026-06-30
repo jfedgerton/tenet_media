@@ -14,12 +14,13 @@ CO <- "/storage/group/LiberalArts/default/jfe4_collab/podcast"; SC <- file.path(
 TREAT <- as.Date("2023-10-01"); TRUNC <- as.Date("2024-09-01"); MINMENT <- 5
 TIM <- c("timcast_irl", "tim_pool_daily_news", "the_culture_war_podcast_with_tim_pool")
 TRU <- c("tim_pool", "the_benny_show", "the_rubin_report")
+BEN <- c("the_benny_show", "benny_johnson_arena")   # Tenet Arena feed pooled into Benny
 
 P <- fread(file.path(SC, "baseline_panel.csv")); P[, month := as.Date(month)]; P <- P[month < TRUNC]
 P[, tenet := as.integer(unit %in% TRU)]
 P[, c_score := r_score - u_score]; P[, c_pos := r_pos - u_pos]
 V <- fread(file.path(SC, "loso_volume.csv")); V[, month := as.Date(month)]
-V[, unit := fifelse(show %in% TIM, "tim_pool", show)]
+V[, unit := fifelse(show %in% TIM, "tim_pool", fifelse(show %in% BEN, "the_benny_show", show))]
 Vunit <- V[, .(n_words = sum(n_sent_total)), by = .(unit, month)]
 P <- merge(P, Vunit, by = c("unit", "month"), all.x = TRUE)
 P[, prop_rus := n_ment_r / n_words]

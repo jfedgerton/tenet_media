@@ -16,7 +16,7 @@ suppressMessages({ library(data.table); library(fixest); library(Matching); libr
 set.seed(123); setDTthreads(1); NC <- as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", "8"))
 CO <- "/storage/group/LiberalArts/default/jfe4_collab/podcast"; SC <- file.path(CO, "data", "sc_results")
 TREAT <- as.Date("2023-10-01"); SCM_WIN <- as.Date("2021-01-01"); MINMENT <- 5; MINTOT <- 10
-FEEDS <- c("the_benny_show", "the_rubin_report", "timcast_irl", "tim_pool_daily_news", "the_culture_war_podcast_with_tim_pool")
+FEEDS <- c("the_benny_show", "benny_johnson_arena", "the_rubin_report", "timcast_irl", "tim_pool_daily_news", "the_culture_war_podcast_with_tim_pool")
 norm <- function(x) gsub("[^a-z0-9]", "", tolower(x))
 
 P <- fread(file.path(SC, "loso_stance_panel.csv")); P[, month := as.Date(month)]

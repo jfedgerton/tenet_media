@@ -15,59 +15,63 @@
   cat/.style    ={rectangle, rounded corners=2pt, draw=black!60, fill=green!7,  text width=22mm, align=center, minimum height=7mm},
   analy/.style  ={rectangle, rounded corners=2pt, draw=black!80, fill=red!8,    text width=30mm, align=center, minimum height=9mm},
   stagelbl/.style   ={font=\scriptsize\itshape, text=black!55},
+  swatch/.style ={rectangle, rounded corners=1pt, draw=black!55, minimum width=5mm, minimum height=3.6mm, inner sep=0pt},
   arr/.style    ={->, thick, draw=black!65}
 ]
-
-% ---- PULL / PROCESS column (left, top-to-bottom) ----
-\node[pull]  (rss)   {Podcast catalog \& RSS feeds\\\textbf{(01 pull)}};
-\node[pull]  (audio) [below=of rss]   {Audio download\\\textbf{(02)}};
-\node[proc]  (asr)   [below=of audio] {Whisper transcription\\\textbf{(04)}};
-\node[proc]  (corp)  [below=of asr]   {Sentence corpus\\(sharded build $\to$ merge)\\\textbf{(05)}};
-
-% ---- TOPIC column (middle) ----
-\node[model] (bert)  [right=22mm of corp] {BERTopic topic model\\\textbf{(06)}};
-\node[proc]  (rid)   [above=of bert] {Identify Russia/Ukraine\\topics (78, 79)\\\textbf{(07--08)}};
-
-% ---- LABELING column ----
-\node[model] (label) [right=22mm of bert, text width=34mm]
-   {Stance labeling\\ human codebook (\texttt{full\_opus\_patched})\\ $\to$ RoBERTa 4-class\\\textbf{(11a--11e)}};
-
-% ---- CATEGORIES (the 4 stance classes, per target) ----
-\node[cat] (pos) [right=20mm of label, yshift=15mm] {Positive};
+% ---- DATA COLLECTION column (left; flows BOTTOM-UP; compressed to 3) ----
+\node[proc]  (corp)  {Sentence Corpus\\Creation};
+\node[pull]  (adt)   [below=of corp]  {Audio Download\\and Transcription};
+\node[pull]  (idp)   [below=of adt]   {Identifying Tenet Media\\and Peer Programs};
+% ---- TOPIC MODEL (top middle) ----
+\node[model] (bert)  [right=14mm of corp] {Create topics};
+\node[proc]  (rid)   [below=of bert] {Identify Russia/Ukraine\\topics};
+% ---- ANALYSES (right; over the category nodes) ----
+\node[proc, text width=34mm]  (panel) [right=14mm of bert]
+   {Panel data on pre- and post- stance;\\ topic share, frequency, \\ volume, divergence};
+\node[analy, text width=40mm] (anal)  [below=of panel]
+   {Causal models\\ Selection $\cdot$ Amplification $\cdot$ Content $\cdot$ Division};
+% ---- CATEGORIES (below the analyses box) ----
+\node[cat] (pos) [below=12mm of anal] {Positive};
 \node[cat] (neg) [below=4mm of pos] {Negative};
 \node[cat] (neu) [below=4mm of neg] {Neutral};
 \node[cat] (unm) [below=4mm of neu] {Unmentioned};
-\node[stagelbl, above=1mm of pos] {per target: Russia / Ukraine};
-
-% ---- PANEL + ANALYSIS ----
-\node[proc]  (panel) [below=26mm of label, text width=34mm]
-   {Show\,$\times$\,month panel\\ stance score, pos rate, net;\\ agenda share; volume; audience\\\textbf{(12)}};
-\node[analy] (anal)  [below=of panel, text width=40mm]
-   {Causal models (R)\\ H1 selection $\cdot$ H2 amplification\\ H3 agenda $\cdot$ H4 divergence\\ TWFE / matching / synthetic control\\\textbf{(13--15)}};
-
+% ---- STANCE labeling: aligned under the TOPIC MODEL column, between neg and neu ----
+\coordinate (nmid) at ($(neg)!0.5!(neu)$);
+\node[model, text width=30mm] (label) at (bert |- nmid) {Stance labeling};
+% ---- LEGEND: node colour key (lower-left, below DATA COLLECTION) ----
+\node[swatch, fill=blue!6,    anchor=north west] (k1) at ($(idp.south west)+(1mm,-10mm)$) {};
+\node[anchor=west, font=\scriptsize] (l1) at (k1.east) {~Data acquisition};
+\node[swatch, fill=gray!8,    anchor=north west] (k2) at ($(k1.south west)+(0,-2mm)$) {};
+\node[anchor=west, font=\scriptsize] (l2) at (k2.east) {~Processing / data product};
+\node[swatch, fill=orange!10, anchor=north west] (k3) at ($(k2.south west)+(0,-2mm)$) {};
+\node[anchor=west, font=\scriptsize] (l3) at (k3.east) {~Machine-learning model};
+\node[swatch, fill=green!7,   anchor=north west] (k4) at ($(k3.south west)+(0,-2mm)$) {};
+\node[anchor=west, font=\scriptsize] (l4) at (k4.east) {~Stance class};
+\node[swatch, fill=red!8,     anchor=north west] (k5) at ($(k4.south west)+(0,-2mm)$) {};
+\node[anchor=west, font=\scriptsize] (l5) at (k5.east) {~Causal / statistical analysis};
 % ---- edges ----
-\draw[arr] (rss)   -- (audio);
-\draw[arr] (audio) -- (asr);
-\draw[arr] (asr)   -- (corp);
+\draw[arr] (idp)   -- (adt);
+\draw[arr] (adt)   -- (corp);
 \draw[arr] (corp)  -- (bert);
 \draw[arr] (bert)  -- (rid);
-\draw[arr] (rid.east) -- ++(6mm,0) |- (label.west);
-\draw[arr] (bert)  -- (label);
+\draw[arr] (rid)   -- (label);
 \draw[arr] (label.east) -- ++(6mm,0) |- (pos.west);
 \draw[arr] (label.east) -- ++(6mm,0) |- (neg.west);
 \draw[arr] (label.east) -- ++(6mm,0) |- (neu.west);
 \draw[arr] (label.east) -- ++(6mm,0) |- (unm.west);
-\draw[arr] (label) -- (panel);
 \draw[arr] (panel) -- (anal);
-% categories feed the panel
-\draw[arr, dashed, draw=green!45!black] (unm.south) |- ($(panel.east)+(8mm,8mm)$) -- (panel.east);
-
+% topic + stance classes feed the panel (green)
+\draw[arr, draw=green!45!black] (rid.east) -- ++(8mm,0) |- (panel.west);
+\draw[arr, draw=green!45!black] (pos.east) -- ++(10mm,0) |- (panel.east);
+\draw[arr, draw=green!45!black] (neg.east) -- ++(10mm,0) |- (panel.east);
+\draw[arr, draw=green!45!black] (neu.east) -- ++(10mm,0) |- (panel.east);
+\draw[arr, draw=green!45!black] (unm.east) -- ++(10mm,0) |- (panel.east);
 % ---- stage banners ----
 \begin{scope}[on background layer]
-  \node[fit=(rss)(corp), draw=blue!30, dashed, inner sep=4mm, label={[stagelbl]above:PULL \& TRANSCRIBE}] {};
-  \node[fit=(rid)(bert), draw=orange!40, dashed, inner sep=4mm, label={[stagelbl]above:TOPIC MODEL}] {};
-  \node[fit=(label)(unm), draw=green!40!black!50, dashed, inner sep=4mm, label={[stagelbl]above:STANCE CATEGORIZE}] {};
+  \node[fit=(idp)(corp), draw=blue!30, dashed, inner sep=4mm, label={[stagelbl]above:DATA COLLECTION}] {};
+  \node[fit=(rid)(bert), draw=orange!40, dashed, inner sep=4mm, label={[stagelbl]above:CATEGORIZING CONTENT}] {};
+  \node[fit=(label)(pos)(unm), draw=green!40!black!50, dashed, inner sep=4mm, label={[stagelbl]below:STANCE DETECTION}] {};
+  \node[fit=(panel)(anal), draw=red!35, dashed, inner sep=4mm, label={[stagelbl]above:ANALYTIC APPROACHES}] {};
 \end{scope}
-
 \end{tikzpicture}
 \end{document}

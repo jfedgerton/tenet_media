@@ -42,11 +42,12 @@ START <- as.Date("2018-01-01"); TRUNC <- as.Date("2024-09-01"); SCM_WIN <- as.Da
 MINMENT_BASE <- 5; MINMENT_GRID <- c(0, 1, 3, 5, 10, 20)
 TIM <- c("timcast_irl", "tim_pool_daily_news", "the_culture_war_podcast_with_tim_pool")
 TRU <- c("tim_pool", "the_benny_show", "the_rubin_report")
+BEN <- c("the_benny_show", "benny_johnson_arena")   # Tenet Arena feed pooled into Benny
 
 ## ---- sentence-level 4-class probs (for the mass-transfer axis) --------------
 S <- fread(file.path(SC, "probs_4class.csv")); S[, date := as.Date(date)]
 S <- S[!is.na(date) & date >= START & date < TRUNC]
-S[, month := as.Date(format(date, "%Y-%m-01"))]; S[, unit := fifelse(show %in% TIM, "tim_pool", show)]
+S[, month := as.Date(format(date, "%Y-%m-01"))]; S[, unit := fifelse(show %in% TIM, "tim_pool", fifelse(show %in% BEN, "the_benny_show", show))]
 Rpp <- S$russia_p_pos; Rpn <- S$russia_p_neg; Rpu <- S$russia_p_neu; Rpx <- S$russia_p_unment
 Upp <- S$ukraine_p_pos; Upn <- S$ukraine_p_neg; Upu <- S$ukraine_p_neu; Upx <- S$ukraine_p_unment
 unit_v <- S$unit; month_v <- S$month
@@ -56,7 +57,7 @@ rm(S); gc(FALSE)   # drop the big sentence-level table once its columns are extr
 AM <- fread(file.path(SC, "audience_monthly.csv")); AM[, month := as.Date(month)]
 AM <- AM[, .(unit, month, log_aud_m = log(aud_mid))]
 V  <- fread(file.path(SC, "loso_volume.csv")); V[, month := as.Date(month)]
-V[, unit := fifelse(show %in% TIM, "tim_pool", show)]
+V[, unit := fifelse(show %in% TIM, "tim_pool", fifelse(show %in% BEN, "the_benny_show", show))]
 VOL <- V[, .(log_words = log(mean(n_sent_total))), by = .(unit, month)]
 
 ## ---- mass-transfer op (identity = op 0) ------------------------------------

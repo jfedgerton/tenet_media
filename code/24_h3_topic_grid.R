@@ -30,6 +30,7 @@ TREAT_DATES <- as.Date(c("2023-10-01", "2023-11-01"))
 SCM_WIN <- as.Date("2021-01-01"); MINTOT <- 10
 TIM <- c("timcast_irl", "tim_pool_daily_news", "the_culture_war_podcast_with_tim_pool")
 TRU <- c("tim_pool", "the_benny_show", "the_rubin_report")
+BEN <- c("the_benny_show", "benny_johnson_arena")   # Tenet Arena feed pooled into Benny
 norm <- function(x) gsub("[^a-z0-9]", "", tolower(x))
 
 ## ---- inputs ----

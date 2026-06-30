@@ -43,6 +43,7 @@ TOPIC_INFO = COLLAB + "/data/topic_info.csv"
 START, TRUNC, FREEZE = pd.Timestamp("2018-01-01"), pd.Timestamp("2024-09-01"), pd.Timestamp("2023-10-01")
 TIM = {"timcast_irl", "tim_pool_daily_news", "the_culture_war_podcast_with_tim_pool"}
 TRU = {"tim_pool", "the_benny_show", "the_rubin_report"}
+BEN = {"the_benny_show", "benny_johnson_arena"}   # Tenet Arena feed pooled into Benny
 TENET_FEEDS = ["the_benny_show", "the_rubin_report"] + sorted(TIM)
 RUS = [78, 79]
 RARE_N = 200; R_DRAWS = 15
@@ -52,11 +53,11 @@ RUS_KW = re.compile(r"russ|ukrain|putin|kyiv|kiev|kremlin|moscow|zelens|donbas|n
 units = pd.read_csv(PANEL)["unit"].unique().tolist()
 shows = set()
 for u in units:
-    shows |= TIM if u == "tim_pool" else {u}
+    shows |= TIM if u == "tim_pool" else (BEN if u == "the_benny_show" else {u})
 df = pd.read_parquet(CORPUS, columns=["show", "date", "topic"])
 df["date"] = pd.to_datetime(df["date"], errors="coerce")
 df = df[df["date"].between(START, TRUNC, inclusive="left") & df["show"].isin(shows) & (df["topic"] != -1)].copy()
-df["unit"] = np.where(df["show"].isin(TIM), "tim_pool", df["show"])
+df["unit"] = np.where(df["show"].isin(TIM), "tim_pool", np.where(df["show"].isin(BEN), "the_benny_show", df["show"]))
 df["month"] = df["date"].values.astype("datetime64[M]")
 df["treated"] = df["unit"].isin(TRU).astype(int)
 print("[load]", len(df), "sentences;", df["unit"].nunique(), "units;", df["topic"].nunique(), "topics")

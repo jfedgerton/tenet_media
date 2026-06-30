@@ -21,6 +21,7 @@ CO <- "/storage/group/LiberalArts/default/jfe4_collab/podcast"; SC <- file.path(
 TREAT <- as.Date("2023-10-01"); SCM_WIN <- as.Date("2021-01-01")
 TIM <- c("timcast_irl", "tim_pool_daily_news", "the_culture_war_podcast_with_tim_pool")
 TRU <- c("tim_pool", "the_benny_show", "the_rubin_report")
+BEN <- c("the_benny_show", "benny_johnson_arena")   # Tenet Arena feed pooled into Benny
 
 ## ---- divergence panel (MAIN spec only) + controls ---------------------------
 D <- fread(file.path(SC, "h4_divergence_panel.csv"))
@@ -28,7 +29,7 @@ D <- D[topicset == "all" & reference == "contemp" & rare == "rare"]
 D[, month := as.Date(month)]; D[, mfac := factor(month)]; D[, tenet := as.integer(unit %in% TRU)]
 D[, post := as.integer(month >= TREAT)]; D[, tp := tenet * post]; D[, log_n := log(n_sentences)]
 V <- fread(file.path(SC, "loso_volume.csv")); V[, month := as.Date(month)]
-V[, unit := fifelse(show %in% TIM, "tim_pool", show)]
+V[, unit := fifelse(show %in% TIM, "tim_pool", fifelse(show %in% BEN, "the_benny_show", show))]
 Vunit <- V[, .(n_words = mean(n_sent_total)), by = .(unit, month)]
 D <- merge(D, Vunit, by = c("unit", "month"), all.x = TRUE); D[, log_words := log(n_words)]
 AM <- fread(file.path(SC, "audience_monthly.csv")); AM[, month := as.Date(month)]

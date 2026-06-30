@@ -17,6 +17,7 @@ set.seed(123)
 CO <- "/storage/group/LiberalArts/default/jfe4_collab/podcast"; SC <- file.path(CO, "data", "sc_results")
 TREAT <- as.Date("2023-10-01"); MINMENT <- 5; B_RI <- 2000
 TIM <- c("timcast_irl", "tim_pool_daily_news", "the_culture_war_podcast_with_tim_pool")
+BEN <- c("the_benny_show", "benny_johnson_arena")   # Tenet Arena feed pooled into Benny
 HOSTS_TREAT <- c("host_benny", "host_rubin", "host_tim")
 norm <- function(x) gsub("[^a-z0-9]", "", tolower(x))
 
@@ -25,7 +26,7 @@ minm <- min(P$month); P[, t := as.integer(round(as.numeric(month-minm)/30.4375))
 P[, year := as.integer(format(month, "%Y"))]; P[, mfac := as.factor(month)]
 P[, c_score := r_score - u_score]; P[, c_pos := r_pos - u_pos]; P[, c_net := r_net - u_net]
 P[, host := fifelse(show %in% TIM, "host_tim",
-              fifelse(show == "the_benny_show", "host_benny",
+              fifelse(show %in% BEN, "host_benny",
               fifelse(show == "the_rubin_report", "host_rubin", show)))]
 aud <- fread(file.path(CO, "data", "show_data", "treated_terminal_blocks_weightedDecay.csv"))
 aud[, key := norm(title)]; aud <- aud[!is.na(mean_audience)]

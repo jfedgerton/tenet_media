@@ -3,7 +3,7 @@ import pyarrow.parquet as pq
 COLLAB=os.environ["COLLAB"]; OUT=COLLAB+"/data/sc_results"
 np.random.seed(123)
 SRC=COLLAB+"/data/russia_corpus.parquet"
-TEN=set(["tim_pool_daily_news","timcast_irl","the_culture_war_podcast_with_tim_pool","the_rubin_report","the_benny_show"])
+TEN=set(["tim_pool_daily_news","timcast_irl","the_culture_war_podcast_with_tim_pool","the_rubin_report","the_benny_show","benny_johnson_arena"])
 TREAT=pd.Timestamp("2023-10-01")
 df=pq.read_table(SRC,columns=["show","date","episode_number","sentence_id","sentence"]).to_pandas()
 df=df[df["date"].notna()].copy()

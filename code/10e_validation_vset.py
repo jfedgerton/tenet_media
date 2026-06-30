@@ -3,7 +3,7 @@ import pyarrow.parquet as pq
 COLLAB=os.environ["COLLAB"]; OUT=COLLAB+"/data/sc_results"
 np.random.seed(123)
 SRC=COLLAB+"/data/corpus_with_topics.parquet"
-TEN=set(["tim_pool_daily_news","timcast_irl","the_culture_war_podcast_with_tim_pool","the_rubin_report","the_benny_show"])
+TEN=set(["tim_pool_daily_news","timcast_irl","the_culture_war_podcast_with_tim_pool","the_rubin_report","the_benny_show","benny_johnson_arena"])
 TREAT=pd.Timestamp("2023-10-01")
 TARGETMAP={79:"russia",78:"ukraine",353:"assad"}
 KEYS=set(TARGETMAP)

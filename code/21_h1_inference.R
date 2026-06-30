@@ -18,6 +18,7 @@ set.seed(123)
 CO <- "/storage/group/LiberalArts/default/jfe4_collab/podcast"; SC <- file.path(CO, "data", "sc_results")
 TREAT <- as.Date("2023-10-01"); MINMENT <- 5; B_RI <- 2000
 TRU <- c("tim_pool", "the_benny_show", "the_rubin_report")
+BEN <- c("the_benny_show", "benny_johnson_arena")   # Tenet Arena feed pooled into Benny
 TIM <- c("timcast_irl", "tim_pool_daily_news", "the_culture_war_podcast_with_tim_pool")
 norm <- function(x) gsub("[^a-z0-9]", "", tolower(x))
 

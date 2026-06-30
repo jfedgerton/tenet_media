@@ -25,10 +25,11 @@ COLLAB <- "/storage/group/LiberalArts/default/jfe4_collab/podcast"; SC <- file.p
 TREAT_DATES <- as.Date(c("2023-10-01", "2023-11-01")); SCM_WIN <- as.Date("2021-01-01"); MINMON <- 6
 TIM <- c("timcast_irl", "tim_pool_daily_news", "the_culture_war_podcast_with_tim_pool")
 TRU <- c("tim_pool", "the_benny_show", "the_rubin_report")
+BEN <- c("the_benny_show", "benny_johnson_arena")   # Tenet Arena feed pooled into Benny
 norm <- function(x) gsub("[^a-z0-9]", "", tolower(x))
 
 P <- fread(file.path(SC, "h4_divergence_panel.csv")); P[, month := as.Date(month)]
-P[, unit := fifelse(unit %in% TIM, "tim_pool", unit)]      # (already unit-level, defensive)
+P[, unit := fifelse(unit %in% TIM, "tim_pool", fifelse(unit %in% BEN, "the_benny_show", unit))]      # (already unit-level, defensive)
 minm <- min(P$month); P[, t := as.integer(round(as.numeric(month - minm) / 30.4375))]; P[, t2 := t^2]
 P[, tenet := as.integer(unit %in% TRU)]; P[, log_n := log(n_sentences)]
 

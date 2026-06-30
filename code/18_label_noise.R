@@ -22,6 +22,7 @@ TREAT <- as.Date("2023-10-01"); TRUNC <- as.Date("2024-09-01"); START <- as.Date
 MINMENT <- 5
 TIM <- c("timcast_irl", "tim_pool_daily_news", "the_culture_war_podcast_with_tim_pool")
 TRU <- c("tim_pool", "the_benny_show", "the_rubin_report")
+BEN <- c("the_benny_show", "benny_johnson_arena")   # Tenet Arena feed pooled into Benny
 CLASSES <- c("positive", "negative", "neutral"); ORD <- c(positive = 1, neutral = 0, negative = -1)
 
 ## ---- load sentence-level 4-class stance labels ------------------------------
@@ -29,7 +30,7 @@ S <- as.data.table(read_parquet(file.path(SC, "opus_c0_corpus_labeled.parquet"),
        col_select = c("show", "date", "russia_label", "ukraine_label")))
 S[, date := as.Date(date)]; S <- S[!is.na(date) & date >= START & date < TRUNC]
 S[, month := as.Date(format(date, "%Y-%m-01"))]
-S[, unit := fifelse(show %in% TIM, "tim_pool", show)]
+S[, unit := fifelse(show %in% TIM, "tim_pool", fifelse(show %in% BEN, "the_benny_show", show))]
 
 ## ---- label transforms -------------------------------------------------------
 recode <- function(lab, rule) {

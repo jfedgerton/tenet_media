@@ -19,7 +19,7 @@ import numpy as np, pandas as pd
 SEED = 123; np.random.seed(SEED)
 CO = "/storage/group/LiberalArts/default/jfe4_collab/podcast"; SC = CO + "/data/sc_results"
 START, TRUNC = pd.Timestamp("2018-01-01"), pd.Timestamp("2024-09-01")
-TENET = {"the_benny_show", "the_rubin_report", "timcast_irl", "tim_pool_daily_news", "the_culture_war_podcast_with_tim_pool"}
+TENET = {"the_benny_show", "benny_johnson_arena", "the_rubin_report", "timcast_irl", "tim_pool_daily_news", "the_culture_war_podcast_with_tim_pool"}
 ORD = {"positive": 1, "neutral": 0, "negative": -1}
 RARE_N = 200; R_DRAWS = 15
 

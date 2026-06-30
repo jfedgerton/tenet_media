@@ -6,10 +6,10 @@ import os, glob
 import numpy as np, pandas as pd
 import pyarrow.parquet as pq
 C=os.environ["COLLAB"]; OUTROOT=os.path.join(C,"data/sc_results/bert_out")
-TEN={"tim_pool_daily_news","timcast_irl","the_culture_war_podcast_with_tim_pool","the_rubin_report","the_benny_show"}
+TEN={"tim_pool_daily_news","timcast_irl","the_culture_war_podcast_with_tim_pool","the_rubin_report","the_benny_show","benny_johnson_arena"}
 TIMPOOL={"tim_pool_daily_news","timcast_irl","the_culture_war_podcast_with_tim_pool"}
 TREAT=pd.Timestamp("2023-10-01")
-def host(s): return "tim_pool_network" if s in TIMPOOL else s
+def host(s): return "tim_pool_network" if s in TIMPOOL else ("the_benny_show" if s=="benny_johnson_arena" else s)
 
 val=[]; cells=sorted([d for d in glob.glob(OUTROOT+"/*") if os.path.isdir(d)])
 for d in cells:
@@ -32,7 +32,7 @@ for d in cells:
         g["target"]=tgt; rows.append(g)
     panel=pd.concat(rows,ignore_index=True)
     panel["cell"]=cell
-    panel["is_tenet"]=panel["host"].isin({"tim_pool_network","the_rubin_report","the_benny_show"}).astype(int)
+    panel["is_tenet"]=panel["host"].isin({"tim_pool_network","the_rubin_report","the_benny_show","benny_johnson_arena"}).astype(int)
     panel["date"]=pd.to_datetime(panel["ym"]); panel["post"]=(panel["date"]>=TREAT).astype(int)
     panel.to_csv(os.path.join(OUTROOT,f"{cell}_panel_month.csv"),index=False)
     print("panel built",cell,len(panel))

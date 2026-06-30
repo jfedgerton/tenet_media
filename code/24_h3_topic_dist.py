@@ -35,6 +35,7 @@ PANEL = SC + "/baseline_panel.csv"
 RELEVANT = [78, 79]
 START, TRUNC = pd.Timestamp("2018-01-01"), pd.Timestamp("2024-09-01")
 TIM = {"timcast_irl", "tim_pool_daily_news", "the_culture_war_podcast_with_tim_pool"}
+BEN = {"the_benny_show", "benny_johnson_arena"}   # Tenet Arena feed pooled into Benny
 BATCH = 10_000
 np.random.seed(SEED)
 
@@ -64,11 +65,11 @@ COLS5 = [78, 79, NN[78], NN[79]]                          # the four tracked top
 units = pd.read_csv(PANEL)["unit"].unique().tolist()
 shows = set()
 for u in units:
-    shows |= TIM if u == "tim_pool" else {u}
+    shows |= TIM if u == "tim_pool" else (BEN if u == "the_benny_show" else {u})
 df = pd.read_parquet(CORPUS, columns=["show", "date", "sentence_id", "sentence", "topic"])
 df["date"] = pd.to_datetime(df["date"], errors="coerce")
 df = df[df["date"].between(START, TRUNC, inclusive="left") & df["show"].isin(shows)].copy()
-df["unit"] = np.where(df["show"].isin(TIM), "tim_pool", df["show"])
+df["unit"] = np.where(df["show"].isin(TIM), "tim_pool", np.where(df["show"].isin(BEN), "the_benny_show", df["show"]))
 df["month"] = df["date"].values.astype("datetime64[M]")
 print("[universe]", len(df), "sentences,", df["unit"].nunique(), "units")
 

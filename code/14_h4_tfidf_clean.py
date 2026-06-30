@@ -7,7 +7,7 @@ import numpy as np, pandas as pd
 
 CO = "/storage/group/LiberalArts/default/jfe4_collab/podcast"
 SC = CO + "/data/sc_results"
-FEEDS = ["the_benny_show", "the_rubin_report", "timcast_irl",
+FEEDS = ["the_benny_show", "benny_johnson_arena", "the_rubin_report", "timcast_irl",
          "tim_pool_daily_news", "the_culture_war_podcast_with_tim_pool"]
 JUNK = re.compile(r"promo|code|slash|com slash|download|bleacher|staying connected|"
                   r"know mean|mean know|miss moment|sponsor|discount|today miss", re.I)

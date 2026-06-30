@@ -21,6 +21,7 @@ COLLAB <- "/storage/group/LiberalArts/default/jfe4_collab/podcast"; SC <- file.p
 TREAT <- as.Date("2023-10-01"); MINMENT <- 5; SCM_WIN <- as.Date("2021-01-01")
 TIM <- c("timcast_irl", "tim_pool_daily_news", "the_culture_war_podcast_with_tim_pool")
 TRU <- c("tim_pool", "the_benny_show", "the_rubin_report")
+BEN <- c("the_benny_show", "benny_johnson_arena")   # Tenet Arena feed pooled into Benny
 norm <- function(x) gsub("[^a-z0-9]", "", tolower(x))
 
 P <- fread(file.path(SC, "perturb_panels_all.csv")); P[, month := as.Date(month)]
