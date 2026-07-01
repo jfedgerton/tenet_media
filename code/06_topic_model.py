@@ -149,7 +149,9 @@ def main():
 
     # ---- Load corpus ----
     log.info("Loading corpus from %s", corpus_path)
-    corpus = pd.read_parquet(corpus_path)
+    corpus = pd.read_parquet(corpus_path, columns=["show", "sentence"])
+    corpus["sentence"] = corpus["sentence"].fillna("").astype(str)
+    corpus.loc[corpus["sentence"].str.strip().str.len() == 0, "sentence"] = "[empty]"
     log.info("Corpus: %d rows, %d columns", len(corpus), len(corpus.columns))
 
     # ---- Sample for fitting ----
