@@ -3,7 +3,7 @@
 Did Russian funding routed through **Tenet Media** change how three treated podcasts
 (Benny Johnson, Dave Rubin, and Tim Pool — his three feeds pooled) discuss
 Russia/Ukraine, relative to ~280 control conservative podcasts? The project transcribes
-~212K episodes, models topics, classifies **stance** toward Russia/Ukraine, and uses
+~230K episodes, models topics, classifies **stance** toward Russia/Ukraine, and uses
 difference-in-differences / synthetic-control designs to measure shifts in stance,
 agenda emphasis, and agenda divergence around the payment period.
 
@@ -16,7 +16,7 @@ Oct 2023–Aug 2024), ~1 month before Tenet's public Nov-2023 launch. Panel 2018
 The analyses use **human + machine stance labeling on the Russia/Ukraine topics**, not an
 off-the-shelf sentiment model:
 
-1. **Topics.** BERTopic over the full corpus locates the Russia/Ukraine topics (78, 79).
+1. **Topics.** BERTopic locates the Russia/Ukraine topics BY KEYWORD. Topic IDs change on every refit, so the old hardcoded {78, 79} no longer applies. Documents are built at 1, 3, and 5 sentences (main = 1-sentence; 3/5 = appendix).
 2. **Human coding.** A sample of topic-78/79 sentences is hand/LLM-coded for *stance toward
    the target* (the validation set).
 3. **Machine labeling.** A transformer classifier distilled from that human-validated set
@@ -99,3 +99,15 @@ path variables at the top of each script to where the panel CSVs live. PI: Jared
   Russia/Ukraine/Combined *(content edit pending)*.
 - **Archived** superseded scripts (`15_main_analyses.R`, `30_h1_main.R`,
   `29_best_h1_ci.R`) under `code/archive/`.
+
+## Revision: 1/3/5-sentence windowing + Arena/Jarrett (2026-07)
+
+Added Benny Johnson In The Arena (43 eps, pooled into treated Benny) and The Gregg Jarrett
+Show (138 eps, control); corpus + BERTopic refit (~230K transcripts). Steps 05-07 now run
+per document window into data/windows/{one,three,five}_sentence/:
+- 05w_build_docs.py + .sbatch: within-episode, non-overlapping W-sentence docs (last chunk < W), sharded; merge_window.sbatch merges to corpus.parquet.
+- 06_topic_model.py + .sbatch: BERTopic fit per window (loads show/sentence cols only, placeholder-fills empty docs, 200G).
+- 07w_identify_topics.py + identify_window.sbatch: keyword Russia/Ukraine + placebo topic ID (refits renumber topics) -> topic_labels.csv, russia_corpus.parquet.
+- run_windows.sh chains build -> merge -> topic -> identify for all three windows.
+- H1-H4 placebo topics: immigration/border, abortion, COVID/vaccines, cancel culture, gender/trans, supreme court, China, Syria.
+- Archived in code/archive/: 05_build_corpus_shard.*, 07_identify_russia_topics.*
