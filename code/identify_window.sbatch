@@ -2,7 +2,7 @@
 #SBATCH --job-name=identify_w
 #SBATCH --output=/storage/group/LiberalArts/default/jfe4_collab/podcast/logs/identify_%A.out
 #SBATCH --error=/storage/group/LiberalArts/default/jfe4_collab/podcast/logs/identify_%A.err
-#SBATCH --time=2:00:00
+#SBATCH --time=6:00:00
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=2
 #SBATCH --account=open

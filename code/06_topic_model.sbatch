@@ -2,7 +2,7 @@
 #SBATCH --job-name=topic_model
 #SBATCH --output=/storage/group/LiberalArts/default/jfe4_collab/podcast/logs/topic_model_%j.out
 #SBATCH --error=/storage/group/LiberalArts/default/jfe4_collab/podcast/logs/topic_model_%j.err
-#SBATCH --time=12:00:00
+#SBATCH --time=14-00:00:00
 #SBATCH --mem=200G
 #SBATCH --cpus-per-task=8
 #SBATCH --constraint=a100

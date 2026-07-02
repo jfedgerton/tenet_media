@@ -21,7 +21,7 @@ from umap import UMAP
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 SEED = 123
-TRANSFORM_BATCH = 50_000
+TRANSFORM_BATCH = 200_000
 
 logging.basicConfig(
     level=logging.INFO,
@@ -68,7 +68,7 @@ def build_bertopic() -> BERTopic:
         random_state=SEED,
     )
     hdbscan_model = HDBSCAN(
-        min_cluster_size=150,
+        min_cluster_size=300,
         min_samples=10,
         prediction_data=True,
     )
@@ -91,6 +91,10 @@ def transform_all(
     topic_model: BERTopic, sentences: pd.Series
 ) -> tuple[list[int], list[float]]:
     """Transform all sentences in batches, returning topics and probabilities."""
+    _umap_orig = topic_model.umap_model.transform
+    def _umap_clean(X, *a, **k):
+        return np.nan_to_num(_umap_orig(X, *a, **k), nan=0.0, posinf=0.0, neginf=0.0)
+    topic_model.umap_model.transform = _umap_clean
     all_topics = []
     all_probs = []
     n = len(sentences)
@@ -107,7 +111,9 @@ def transform_all(
             end - 1,
         )
         batch_docs = sentences.iloc[start:end].tolist()
-        topics, probs = topic_model.transform(batch_docs)
+        emb = topic_model._extract_embeddings(batch_docs, method="document", verbose=False)
+        emb = np.nan_to_num(emb, nan=0.0, posinf=0.0, neginf=0.0)
+        topics, probs = topic_model.transform(batch_docs, embeddings=emb)
         all_topics.extend(topics)
         # probs can be arrays per doc if nr_topics > 1; take max prob
         for p in probs:
@@ -153,6 +159,8 @@ def main():
     corpus["sentence"] = corpus["sentence"].fillna("").astype(str)
     corpus.loc[corpus["sentence"].str.strip().str.len() == 0, "sentence"] = "[empty]"
     log.info("Corpus: %d rows, %d columns", len(corpus), len(corpus.columns))
+    # Filter short sentences (cause NaN in HDBSCAN approximate_predict)
+    before=len(corpus); corpus=corpus[corpus["sentence"].str.strip().str.len()>=5].reset_index(drop=True); log.info("Filtered %d short sentences; kept %d/%d", before-len(corpus), len(corpus), before)
 
     # ---- Sample for fitting ----
     sample_df = sample_sentences(corpus, args.sample_size)
