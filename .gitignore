@@ -15,6 +15,12 @@
 !/tex/
 !/README.md
 !/requirements.txt
+!/archive/
+!/config/
+!/docs/
+!/inputs/
+!/tests/
+!/run_all.sh
 !/.gitignore
 !/.gitattributes
 
@@ -32,6 +38,8 @@
 
 # 4) inside code/: drop caches, archived/legacy code, and transfer leftovers
 code/__pycache__/
+**/__pycache__/
+*.bak*
 code/archive/
 code/*.b64
 code/*.zip
