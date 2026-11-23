@@ -1,0 +1,20 @@
+podcast_id,title,slug,rss_url,treated,status_note
+887867,American Thought Leaders,american_thought_leaders,https://feeds.captivate.fm/american-thought-leaders/,0,"OK (Epoch Times/Jekielek, verified)"
+1626613,Candace Owens,candace_owens,https://feeds.megaphone.fm/candace,0,"OK (independent 2024 'Candace', verified) — overlaps 811657"
+1952235,Free Speech Nation | GB News,free_speech_nation_gb_news,https://feeds.acast.com/public/shows/60c8cad91feba40012f17d21,0,"OK (GB News/Andrew Doyle, verified)"
+1586243,Heterodox Out Loud,heterodox_out_loud,https://feeds.simplecast.com/Pxnj9GT5,0,"OK (Heterodox Academy, verified)"
+225168,Morning Glory,morning_glory,,0,"NOT FOUND — EWTN Morning Glory, ended Dec 2020; feed retired"
+686623,Paul VanderKlay's Podcast,paul_vanderklay_s_podcast,https://feed.podbean.com/paulvanderklay/feed.xml,0,"OK (CRC pastor PVK, verified)"
+131628,Proceedings of the Aristotelian Society,proceedings_of_the_aristotelian_society,https://www.aristoteliansociety.org.uk/proceedings/mp3/aspodcasts.xml,0,"OK (UK philosophy society, verified)"
+5362,Stand Up For The Truth Podcast,stand_up_for_the_truth_podcast,https://feeds.podcastmirror.com/suftt,0,"OK (Q90 FM Christian talk, verified)"
+4758191,The Best of Making Sense with Sam Harris,the_best_of_making_sense_with_sam_harris,,0,"NOT FOUND — 'Best of Making Sense' discontinued, feed 404 since 2023"
+811657,The Candace Owens Show,the_candace_owens_show,https://feeds.soundcloud.com/users/soundcloud:users:593344158/sounds.rss,0,"OK (older PragerU show, verified) — serves audio over HTTP; overlaps 1626613"
+993013,The Cats Roundtable,the_cats_roundtable,https://feeds.megaphone.fm/WABC2062343038,0,"OK (Catsimatidis/77 WABC, LIVE) — distinct from existing CATS Roundtable 49733"
+492671,The Chris Salcedo Show,the_chris_salcedo_show,,0,DEAD — correct show (Cumulus/WBAP Salcedo) but Omny feed 404/delisted; no live public feed
+782972,The Laura Ingraham Podcast,the_laura_ingraham_podcast,,0,DEAD — correct show (Ingraham) but Omny feed 404; moved behind Quake Media paywall ~2021
+64440,The Music Show,the_music_show,https://www.abc.net.au/feeds/2883396/podcast.xml,0,"FLAG — resolves to ABC Australia 'The Music Show' (Andrew Ford), a MUSIC show, not political. ID maps here but verify you want it"
+4867920,The News Agents,the_news_agents,https://feeds.captivate.fm/the-news-agents/,0,"OK (Global UK, Maitlis/Sopel, LIVE)"
+1259160,The Right Side With Doug Billings,the_right_side_with_doug_billings,https://www.spreaker.com/show/6530378/episodes/feed,0,"OK (Doug Billings, verified; migrated to Spreaker Dec 2025)"
+698046,The Tara Show,the_tara_show,https://rss.amperwave.net/v2/feed/audacy/cefbfcc4c099a170da48170a739c79be,0,"OK (Tara Servatius/Audacy, verified)"
+123095,The Todd Herman Show,the_todd_herman_show,https://www.spreaker.com/show/5674544/episodes/feed,0,"OK (Todd Herman/Radio America, verified)"
+23998,WWUTT,wwutt,https://feed.podbean.com/wwutt/feed.xml,0,"OK (When We Understand The Text, verified)"
