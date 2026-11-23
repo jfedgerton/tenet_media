@@ -12,7 +12,7 @@
 # WINDOW={1,3,5} via env (default 1). Documents are within-episode, non-overlapping,
 # final chunk < W. Output: data/windows/{one,three,five}_sentence/corpus_shards/
 set -euo pipefail
-COLLAB=/storage/group/LiberalArts/default/jfe4_collab/podcast
+COLLAB=${COLLAB:-/storage/group/LiberalArts/default/jfe4_collab/podcast}
 CODE=$COLLAB/tenet_media_repo/code
 : ${WINDOW:=1}
 : ${FILES_PER_SHARD:=5000}

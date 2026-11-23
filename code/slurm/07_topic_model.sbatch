@@ -10,7 +10,7 @@
 #SBATCH --partition=standard
 #SBATCH --account=jfe4_cr_default
 set -euo pipefail
-COLLAB=/storage/group/LiberalArts/default/jfe4_collab/podcast
+COLLAB=${COLLAB:-/storage/group/LiberalArts/default/jfe4_collab/podcast}
 : ${CORPUS:=$COLLAB/data/corpus.parquet}
 : ${SAMPLE_SIZE:=500000}
 : ${OUTPUT_DIR:=$COLLAB/data/topic_model}

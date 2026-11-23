@@ -64,7 +64,7 @@ exists; **re-run** = built and run on the earlier labels, must re-run once step 
 | 12 | `12_build_disney_pool.py` | Disney placebo pool | done |
 | 13 | `13_assign_coders.py` | Original coder assignment (Oct 9) | done; superseded by 15 |
 | 14 | `14_assign_placebo.py` | Placebo assignment (Oct 9) | done; superseded by 15 |
-| 15 | `15_rebuild_reduced_design.py` | Reduced 8,000-sentence design; every sentence = Jared + 1 student | done (Nov 23); GPT audit pending |
+| 15 | `15_rebuild_reduced_design.py` | Reduced 8,000-sentence design; every sentence = Jared + 1 student. Test: `tests/test_15_rebuild_reduced_design.py` | done (Nov 23); audited Nov 23 |
 | 16 | `16_release_reduced_design.py` | One-time release of 15's files to coder Dropbox folders | done (Nov 30 schedule) |
 | 17 | `17_build_adjudication.py` | Blind A/B adjudication sheets from disagreements | planned |
 | 18 | `18_icr_report.py` | Krippendorff's α from raw codes, by target/stratum/pair | planned |
@@ -74,7 +74,7 @@ exists; **re-run** = built and run on the earlier labels, must re-run once step 
 | 21 | `21_gate_infer.py` | Gate over full one-sentence corpus | planned |
 | 22 | `22_stance_train.py` | Train 4-class stance × 2 targets (twitter-roberta, seed 123) | planned |
 | 23 | `23_stance_infer.py` | Stance over gate-passing sentences | planned |
-| 24 | `24_merge_predictions.py` | Corpus-level labeled file for 25 | planned |
+| 24 | `24_merge_predictions.py` | Writes `data/windows/one_sentence/corpus_with_topics.parquet` (read by 25, 27, 28, 36, 41, 46) and the sentence-level label file for 25/36/46; output contract in the script header | planned |
 | **5_analysis** | | | |
 | 25 | `25_build_panels.py` | Show × month stance/volume panels + audience | re-run |
 | 26 | `26_main_h1h3.R` | Main H1/H2/H3 (FE, matched FE, TWFE, SCM) | re-run |
@@ -120,10 +120,20 @@ human coding, in Dropbox (`podcast_analysis/coder_materials`, `coder_review`). S
 `config/README.md`. Data-access plan for replication: TBD.
 
 ## Running
-`run_all.sh` lists the steps in order (`./run_all.sh --stage 5` runs one stage; planned
-steps are skipped). Steps 01–09 and 20–23 are Roar jobs (`sbatch code/slurm/...`). The R
-layer runs with `module load r` on Roar or locally. Seed 123 throughout.
+`run_all.sh` prints every step in order (dry run). `./run_all.sh --stage 5 --run` runs one
+local stage (5, 6 or 7). Cluster stages 1, 2 and 4 are always print-only. Submit those by hand
+in order and wait for each job, because `sbatch` returns before a job finishes. Planned steps
+are skipped. Every slurm file uses `$COLLAB` if it is set. The R layer runs with `module load r`
+on Roar or locally. Seed 123 throughout. Test of step 15:
+`python3 tests/test_15_rebuild_reduced_design.py` (about 30 seconds, fake data).
 
-Known gaps: many scripts still hard-code `/storage/...` paths (to be moved to `$COLLAB`);
-01/02 slurm logs point at `/scratch` from the 2025 collection run; environments are listed
-in `config/` but not pinned. PI: Jared Edgerton (PSU).
+Known gaps
+- Steps 25–49 cannot run until step 24 exists. The old `data/corpus_with_topics.parquet` is from
+  the pre-windowing corpus, and the step that built it was deleted in July (commit 989f0a9).
+  Step 25 skips its volume panel with a warning, rather than failing, if that file is missing.
+- Many analysis scripts still hard-code `/storage/...` paths (to be moved to `$COLLAB`).
+  `#SBATCH --output` log paths cannot use variables and stay hard-coded.
+- 01/02 slurm logs point at `/scratch` from the 2025 collection run.
+- Environments are listed in `config/` but not pinned.
+
+PI: Jared Edgerton (PSU).

@@ -145,7 +145,7 @@ except FileNotFoundError as e:
 # ---------- total-words volume (all-topic sentence counts) -> loso_volume.csv ----------
 # Time-varying volume control consumed by 13/23/26 (19_loso_panel rebuilds the same per-feed).
 try:
-    cw = pd.read_parquet(COLLAB + "/data/corpus_with_topics.parquet", columns=["show", "date", "topic"])
+    cw = pd.read_parquet(COLLAB + "/data/windows/one_sentence/corpus_with_topics.parquet", columns=["show", "date", "topic"])
     cw["date"] = pd.to_datetime(cw["date"], errors="coerce")
     cw = cw[(cw["date"] >= START) & (cw["date"] < TRUNC) & (cw["topic"] != -1)]
     cw["month"] = cw["date"].values.astype("datetime64[M]")

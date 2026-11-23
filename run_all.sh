@@ -3,8 +3,12 @@
 #
 #   ./run_all.sh                 print every command (dry run, the default)
 #   ./run_all.sh --stage 5       print stage 5 only
-#   ./run_all.sh --stage 5 --run actually run stage 5
+#   ./run_all.sh --stage 5 --run actually run stage 5 (local stages 5-7 only)
 #
+# Cluster stages (1, 2, 4) are ALWAYS print-only, even with --run. sbatch returns as soon
+# as a job is queued, so running them back to back would start later steps on missing or
+# stale inputs. Submit them by hand, in order, waiting for each job (or use the dependency
+# chain inside code/slurm/run_corpus_05_to_08.sh). --run also requires an explicit --stage.
 # Planned steps (placeholders that raise an error) are skipped and reported.
 # Design-time steps 10-16 already ran and build the coder files. They are listed but never
 # re-run here, because re-running would overwrite the files coders are working in.
@@ -23,20 +27,22 @@ while [ $# -gt 0 ]; do
 done
 
 do_cmd () { if [ $RUN -eq 1 ]; then echo "+ $*"; eval "$@"; else echo "  $*"; fi; }
+cluster () { echo "  $*"; }                       # never executed; see header
 planned () { echo "  [skip] $1 -- planned, not yet implemented"; }
 want () { [ "$STAGE" = all ] || [ "$STAGE" = "$1" ]; }
+if [ $RUN -eq 1 ] && [ "$STAGE" = all ]; then echo "--run needs --stage 5, 6 or 7"; exit 1; fi
+case "$STAGE" in 1|2|4) [ $RUN -eq 1 ] && echo "(stage $STAGE is a cluster stage: printing only, nothing is run)";; esac
 
-if want 1; then echo "== 1_collect (Roar) =="
-  do_cmd sbatch code/slurm/01_pull_data.sbatch
-  do_cmd sbatch code/slurm/02_download_audio.sbatch
-  do_cmd python code/1_collect/03_create_key.py
-  echo "  # 04 is a job array, one episode per task; set --array to the rows of file_key.csv"
-  do_cmd sbatch --array=0-N code/slurm/04_transcribe.sbatch
+if want 1; then echo "== 1_collect (Roar; run each after the previous job finishes) =="
+  cluster sbatch code/slurm/01_pull_data.sbatch
+  cluster sbatch code/slurm/02_download_audio.sbatch
+  cluster python code/1_collect/03_create_key.py
+  cluster "sbatch --array=0-<rows in \$COLLAB/file_key.csv minus 1> code/slurm/04_transcribe.sbatch"
 fi
 
 if want 2; then echo "== 2_corpus (Roar) =="
-  do_cmd bash code/slurm/run_corpus_05_to_08.sh        # 05 build -> 06 merge -> 07 topics -> 08 identify, per window
-  do_cmd sbatch code/slurm/09_build_label_pools.sbatch
+  cluster bash code/slurm/run_corpus_05_to_08.sh       # chains 05 -> 06 -> 07 -> 08 per window with afterok dependencies
+  cluster sbatch code/slurm/09_build_label_pools.sbatch # after all 08 jobs finish
 fi
 
 if want 3; then echo "== 3_human_coding =="

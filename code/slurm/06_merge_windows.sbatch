@@ -8,7 +8,7 @@
 #SBATCH --account=open
 #SBATCH --partition=basic
 set -euo pipefail
-COLLAB=/storage/group/LiberalArts/default/jfe4_collab/podcast
+COLLAB=${COLLAB:-/storage/group/LiberalArts/default/jfe4_collab/podcast}
 CODE=$COLLAB/tenet_media_repo/code
 : ${WINDOW:=1}
 case "$WINDOW" in 1) WDIR=one_sentence ;; 3) WDIR=three_sentence ;; 5) WDIR=five_sentence ;; *) exit 1 ;; esac

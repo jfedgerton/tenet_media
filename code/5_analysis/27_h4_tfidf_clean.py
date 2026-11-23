@@ -12,7 +12,7 @@ FEEDS = ["the_benny_show", "benny_johnson_arena", "the_rubin_report", "timcast_i
 JUNK = re.compile(r"promo|code|slash|com slash|download|bleacher|staying connected|"
                   r"know mean|mean know|miss moment|sponsor|discount|today miss", re.I)
 
-df = pd.read_parquet(CO + "/data/corpus_with_topics.parquet", columns=["show", "topic"])
+df = pd.read_parquet(CO + "/data/windows/one_sentence/corpus_with_topics.parquet", columns=["show", "topic"])
 df = df[(df.topic != -1) & (df["show"].isin(FEEDS) | True)]   # keep all shows for IDF
 ti = pd.read_csv(CO + "/data/topic_model/topic_info.csv")
 namecol = "Name" if "Name" in ti.columns else ti.columns[-1]

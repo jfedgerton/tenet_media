@@ -16,7 +16,7 @@ import pandas as pd, numpy as np, re
 import pyarrow.dataset as ds, pyarrow.compute as pc
 
 CO = "/storage/group/LiberalArts/default/jfe4_collab/podcast"; SC = CO + "/data/sc_results"
-CORPUS = CO + "/data/corpus_with_topics.parquet"
+CORPUS = CO + "/data/windows/one_sentence/corpus_with_topics.parquet"
 N_EX, MAXLEN, CAND = 4, 240, 60          # examples per cell; truncation; candidates to fetch per cell
 np.random.seed(123)
 

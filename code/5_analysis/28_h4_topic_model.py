@@ -37,7 +37,7 @@ import numpy as np, pandas as pd
 
 SEED = 123; np.random.seed(SEED)
 COLLAB = "/storage/group/LiberalArts/default/jfe4_collab/podcast"; SC = COLLAB + "/data/sc_results"
-CORPUS = COLLAB + "/data/corpus_with_topics.parquet"
+CORPUS = COLLAB + "/data/windows/one_sentence/corpus_with_topics.parquet"
 PANEL = SC + "/baseline_panel.csv"
 TOPIC_INFO = COLLAB + "/data/topic_info.csv"
 START, TRUNC, FREEZE = pd.Timestamp("2018-01-01"), pd.Timestamp("2024-09-01"), pd.Timestamp("2023-10-01")

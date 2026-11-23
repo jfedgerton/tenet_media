@@ -16,13 +16,20 @@ def main():
     Path(a.output).parent.mkdir(parents=True, exist_ok=True)
     writer = None
     total = 0
-    for sh in shards:
-        log.info('reading %s', sh)
-        t = pq.read_table(sh)
-        if writer is None:
-            writer = pq.ParquetWriter(a.output, t.schema)
-        writer.write_table(t)
-        total += t.num_rows
-    if writer: writer.close()
+    ok = False
+    try:
+        for sh in shards:
+            log.info('reading %s', sh)
+            t = pq.read_table(sh)
+            if writer is None:
+                writer = pq.ParquetWriter(a.output, t.schema)
+            writer.write_table(t)
+            total += t.num_rows
+        ok = True
+    finally:
+        if writer: writer.close()
+        if not ok and Path(a.output).exists():
+            Path(a.output).unlink()          # never leave a partial corpus.parquet behind
+            log.error('merge failed; removed partial %s', a.output)
     log.info('MERGE_DONE rows=%d -> %s', total, a.output)
 if __name__ == '__main__': main()

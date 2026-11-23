@@ -13,7 +13,7 @@
 # venv_whisper = torch 2.4.1+cu118 (P100/V100/A100), openai-whisper 20250625.
 # Model + ffmpeg resolved from group storage so home dir stays clear.
 set -euo pipefail
-C=/storage/group/LiberalArts/default/jfe4_collab/podcast
+C=${COLLAB:-/storage/group/LiberalArts/default/jfe4_collab/podcast}
 export XDG_CACHE_HOME=$C/.cache          # whisper.load_model('small') -> $C/.cache/whisper
 export PATH=$C/venv_whisper/bin:$PATH     # use the imageio-ffmpeg static binary symlink
 cd $C

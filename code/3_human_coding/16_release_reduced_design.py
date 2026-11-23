@@ -2,6 +2,12 @@
 # Moves superseded files to coder_materials/_superseded/old_schedule_nov30/ and
 # copies staged files from coder_review/_staging_nov30/ into place. Logs every action.
 # Usage: python3 16_release_reduced_design.py <podcast_analysis_root>
+# Audit note (Nov 23, 2026): already run, never to be re-run. Known limits, kept as run:
+#   (1) the "refuse if coded" check looks only at stance columns and exempts the Week-1 files
+#   in KEEP; (2) validation and moves are interleaved, so a mid-run failure would leave a partial
+#   release, and the log is written at the end. The audit confirmed this run was complete:
+#   all 23 copies match staging byte for byte, and every populated cell in the archived Emily
+#   submission matches the retained Week-1 file (no decisions lost).
 import sys, os, shutil, glob, datetime
 import pandas as pd
 R = sys.argv[1]; CM = f"{R}/coder_materials"; ST = f"{R}/coder_review/_staging_nov30"; SUP = f"{CM}/_superseded/old_schedule_nov30"

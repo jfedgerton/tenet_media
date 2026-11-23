@@ -8,7 +8,7 @@
 #SBATCH --account=open
 #SBATCH --partition=basic
 set -euo pipefail
-C=/storage/group/LiberalArts/default/jfe4_collab/podcast
+C=${COLLAB:-/storage/group/LiberalArts/default/jfe4_collab/podcast}
 W=${WD:-one_sentence}
 module load python/3.11.2
 source $C/venv_analysis/bin/activate

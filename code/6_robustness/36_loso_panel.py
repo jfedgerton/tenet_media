@@ -51,7 +51,7 @@ def jsd(p, q):
     m = 0.5*(p+q)
     kl = lambda a,b: np.sum((a+EPS)*np.log2((a+EPS)/(b+EPS)))
     return 0.5*kl(p,m)+0.5*kl(q,m)
-cw = pd.read_parquet(CO + "/data/corpus_with_topics.parquet", columns=["show", "date", "topic"])
+cw = pd.read_parquet(CO + "/data/windows/one_sentence/corpus_with_topics.parquet", columns=["show", "date", "topic"])
 cw["date"] = pd.to_datetime(cw["date"], errors="coerce")
 cw = cw[(cw.date >= START) & (cw.date < TRUNC) & (cw.topic != -1)].copy()
 cw["month"] = cw["date"].values.astype("datetime64[M]")

@@ -15,10 +15,26 @@
 #   - Jared Thanksgiving batches A (1,762 Week-1 rows coded once) and B (1,000 new
 #     union rows), built Nov 18.
 #   - The Oct 9 pair assignment: each new sentence goes to ONE of its two
-#     originally assigned students (load-balanced within stratum).
+#     originally assigned students. Strata are processed one at a time, but the
+#     greedy balance uses each student's running total across ALL strata, so totals
+#     are balanced (asserted within 3) while per-stratum counts can differ by a few
+#     percent. Step [5] logs the per-stratum and per-target counts.
+#
+# Known behavior, kept as run (audit Nov 23, 2026). Changing it would change the
+# files already released to coders.
+#   - "Coded" in Week 1 means stance_russia is filled. Five rows marked uncodable=1
+#     with a blank stance (Josh rc_0641, rc_3004; Pam hn_0805, rc_2362, hn_0173) were
+#     therefore treated as blanks. They went back to the same student and to Jared's
+#     batch C. Step 17 treats the Week-1 uncodable mark as that student's code.
+#   - A Week-1 row one student left blank but the other student coded (Emily
+#     hn_0013, rc_3195, coded by Pam) is NOT returned to the blank student. It is
+#     already Pam + Jared (batch A), and returning it would make three coders.
+#     "Every Week-1 blank goes back to its student" applies only to rows nobody coded.
 #
 # Usage: python3 15_rebuild_reduced_design.py <podcast_analysis_root> <out_dir>
-# Writes staged files to <out_dir>; nothing in coder_materials is modified.
+# Writes staged files to <out_dir>; nothing in coder_materials is modified, and an
+# <out_dir> inside coder_materials is refused.
+# Test: tests/test_15_rebuild_reduced_design.py
 ###############################################################################
 import sys, os
 import numpy as np, pandas as pd, openpyxl
@@ -50,6 +66,8 @@ PLAC_COLS = ["row_id", "target", "show", "date", "prev_sentence", "sentence", "n
 CODE_MAIN = ["stance_russia", "stance_ukraine", "historical", "uncodable", "confidence", "notes"]
 CODE_PLAC = ["stance", "uncodable", "confidence", "notes"]
 CM = os.path.join(ROOT, "coder_materials")
+_cm, _out = os.path.realpath(CM), os.path.realpath(OUT)
+assert _out != _cm and not _out.startswith(_cm + os.sep), f"refusing to write inside coder_materials: {OUT}"
 rng = np.random.default_rng(SEED)
 log = []
 def say(*a):
@@ -153,6 +171,10 @@ assert all(student_of[r] in cand_main[r] for r in new_main)
 assert all(student_of[r] in cand_plac[r] for r in new_plac)
 assert max(load.values()) - min(load.values()) <= 3 and max(pload.values()) - min(pload.values()) <= 3, (load, pload)
 say(f"[5] new main per student {load}; placebo per student {pload}")
+_by_grp = pd.DataFrame([(MB.loc[r, "stratum"], student_of[r]) for r in new_main] +
+                       [(PB.loc[r, "target"], student_of[r]) for r in new_plac], columns=["group", "student"])
+say("    per stratum / target (report only; balance is on totals):\n" +
+    pd.crosstab(_by_grp.group, _by_grp.student).to_string())
 
 # ---- 6. Jared batches C (main) and D (placebo) -------------------------------
 C_ids = [r for r in new_main if r not in B_ids]; C_ids = [C_ids[i] for i in rng.permutation(len(C_ids))]
