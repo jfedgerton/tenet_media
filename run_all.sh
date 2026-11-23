@@ -48,8 +48,9 @@ fi
 if want 3; then echo "== 3_human_coding =="
   echo "  [design-time, already run] 10_draw_union_sample 11_draw_nonunion_sample 12_build_disney_pool"
   echo "  [design-time, already run] 13_assign_coders 14_assign_placebo 15_rebuild_reduced_design 16_release_reduced_design"
-  planned 17_build_adjudication
-  planned 18_icr_report
+  echo "  # 17 and 18 run in the Dropbox podcast_analysis folder (coder files live there):"
+  echo "  python code/3_human_coding/17_build_adjudication.py <podcast_analysis>"
+  echo "  python code/3_human_coding/18_icr_report.py <podcast_analysis>"
   planned 19_lock_gold
 fi
 

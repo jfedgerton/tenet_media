@@ -66,8 +66,8 @@ exists; **re-run** = built and run on the earlier labels, must re-run once step 
 | 14 | `14_assign_placebo.py` | Placebo assignment (Oct 9) | done; superseded by 15 |
 | 15 | `15_rebuild_reduced_design.py` | Reduced 8,000-sentence design; every sentence = Jared + 1 student. Test: `tests/test_15_rebuild_reduced_design.py` | done (Nov 23); audited Nov 23 |
 | 16 | `16_release_reduced_design.py` | One-time release of 15's files to coder Dropbox folders | done (Nov 30 schedule) |
-| 17 | `17_build_adjudication.py` | Blind A/B adjudication sheets from disagreements | planned |
-| 18 | `18_icr_report.py` | Krippendorff's α from raw codes, by target/stratum/pair | planned |
+| 17 | `17_build_adjudication.py` | Raw codes from every file; auto-accepts agreements; blind A/B adjudication sheet with rule dropdown; Jon's 200-row audit sample when complete. Test: `tests/test_17_18_adjudication_icr.py` | built Nov 23; GPT audit pending |
+| 18 | `18_icr_report.py` | Nominal Krippendorff's α from raw codes (bootstrap 95% CI), by target, stratum and pair; per-class agreement; gate α | built Nov 23; GPT audit pending |
 | 19 | `19_lock_gold.py` | Freeze adjudicated gold set + confusion matrices | planned |
 | **4_classify** | | | |
 | 20 | `20_gate_train.py` | Train relevance gate on gold (seed 123) | planned |
