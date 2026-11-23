@@ -1,7 +1,10 @@
 # test_15_rebuild_reduced_design.py -- end-to-end test of
 # code/3_human_coding/15_rebuild_reduced_design.py on a full-size FAKE tree.
 #
-#   python3 tests/test_15_rebuild_reduced_design.py [workdir]      (seed 123)
+#   python3 tests/test_15_rebuild_reduced_design.py [parent_dir]   (seed 123)
+#
+# Works in a NEW folder it creates (inside parent_dir if given); it never deletes anything
+# it did not create.
 #
 # 1. Build a fake coder_materials tree with the real structure (36 student files,
 #    3 Week-1 done files, Jared batches A and B). Planted cases: Week-1 blanks, one
@@ -11,14 +14,15 @@
 # 4. Negative tests: 15 must FAIL (a) when a Week-1 file's row order is corrupted and
 #    (b) when the output folder is inside coder_materials.
 # Exits nonzero on the first failed check.
-import sys, os, shutil, subprocess, tempfile, hashlib, glob
+import sys, os, subprocess, tempfile, hashlib, glob
 import numpy as np, pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPT = os.path.join(HERE, "..", "code", "3_human_coding", "15_rebuild_reduced_design.py")
-W = sys.argv[1] if len(sys.argv) > 1 else tempfile.mkdtemp(prefix="test15_")
-R = os.path.join(W, "fake")
-shutil.rmtree(W, ignore_errors=True); os.makedirs(R)
+PARENT = sys.argv[1] if len(sys.argv) > 1 else None
+if PARENT: os.makedirs(PARENT, exist_ok=True)
+W = tempfile.mkdtemp(prefix="test15_", dir=PARENT)   # always fresh and test-owned
+R = os.path.join(W, "fake"); os.makedirs(R)
 rng = np.random.default_rng(123)
 print("workdir", W)
 
@@ -127,11 +131,20 @@ for rel, df in files.items():
     for r in df.row_id: coders.setdefault(r, []).append(who)
 sel = set(man.row_id)
 assert len(sel) == 8000, len(sel)
-bad = {r: c for r, c in coders.items() if r in sel and (len(c) != 2 or len(set(c)) != 2)}
+assert set(coders) == sel, f"{len(sel - set(coders))} selected rows have NO coder; {len(set(coders) - sel)} assigned rows outside the sample"
+bad = {r: coders[r] for r in sel if len(coders[r]) != 2 or len(set(coders[r])) != 2}
 assert not bad, f"{len(bad)} selected rows without exactly 2 distinct coders, e.g. {list(bad.items())[:3]}"
-assert not (set(coders) - sel), "a coded or assigned row is outside the 8,000 sample"
+mc = man.set_index("row_id")[["coder1", "coder2"]].apply(lambda x: sorted(x), axis=1)
+assert all(sorted(coders[r]) == mc[r] for r in sel), "manifest coder1/coder2 disagree with the files"
+LETTER = {"Emily": "A", "Josh": "B", "Pam": "C", "Jared": "J"}
+for rel, df in files.items():
+    who = rel.split(os.sep)[0]
+    assert (df["coder"] == LETTER[who]).all(), f"coder column wrong in {rel}"
+expect = {"Emily": 4, "Josh": 4, "Pam": 4, "Jared": 3}
+got = pd.Series([rel.split(os.sep)[0] for rel in files]).value_counts().to_dict()
+assert got == expect, f"output workbooks per coder {got} != {expect}"
 assert sum(1 for c in coders.values() if "Jared" not in c) == len(twice), "student-student rows != Week-1 twice-coded"
-print("[3b] every one of 8,000 rows has exactly 2 distinct coders (from the files)")
+print("[3b] every one of 8,000 rows has exactly 2 distinct coders (from the files); manifest and coder columns agree")
 
 st = man[man.block == "main"].grp.value_counts().to_dict()
 assert st == {"union": 4000, "nonunion_random": 2000, "hard_negative": 1000}, st

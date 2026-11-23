@@ -66,8 +66,11 @@ PLAC_COLS = ["row_id", "target", "show", "date", "prev_sentence", "sentence", "n
 CODE_MAIN = ["stance_russia", "stance_ukraine", "historical", "uncodable", "confidence", "notes"]
 CODE_PLAC = ["stance", "uncodable", "confidence", "notes"]
 CM = os.path.join(ROOT, "coder_materials")
-_cm, _out = os.path.realpath(CM), os.path.realpath(OUT)
-assert _out != _cm and not _out.startswith(_cm + os.sep), f"refusing to write inside coder_materials: {OUT}"
+_cm = os.path.realpath(CM)
+def assert_outside_cm(path):                 # resolves every symlink on the way, incl. OUT/<student> links
+    rp = os.path.realpath(path)
+    assert rp != _cm and not rp.startswith(_cm + os.sep), f"refusing to write inside coder_materials: {path} -> {rp}"
+assert_outside_cm(OUT)
 rng = np.random.default_rng(SEED)
 log = []
 def say(*a):
@@ -231,7 +234,8 @@ def write(df, cols, code_cols, sheet, path, coder, info):
         dv = DataValidation(type="list", formula1=f, allow_blank=True); dv.add(rg); ws.add_data_validation(dv)
     wi = wb.create_sheet("info")
     for line in info: wi.append([line])
-    os.makedirs(os.path.dirname(path), exist_ok=True); wb.save(path)
+    assert_outside_cm(os.path.dirname(path)); assert_outside_cm(path)
+    os.makedirs(os.path.dirname(path), exist_ok=True); assert_outside_cm(path); wb.save(path)
 
 files = []
 for s in STUDENTS:
@@ -265,7 +269,9 @@ for name, ids, blk in [("jared_WB_C1_main.xlsx", C1, "main"), ("jared_WB_C2_main
         write(PB.loc[ids].reset_index(), PLAC_COLS, CODE_PLAC, "placebo", p, "J",
               [f"Jared - placebo batch D ({len(ids)} rows).", None, "Shuffled across targets; blind to student codes."])
     files.append((p, ids, blk))
+assert_outside_cm(os.path.join(OUT, "_admin"))
 os.makedirs(os.path.join(OUT, "_admin"), exist_ok=True)
+assert_outside_cm(os.path.join(OUT, "_admin", "assignment_master_v2.csv"))
 MAN.to_csv(os.path.join(OUT, "_admin", "assignment_master_v2.csv"), index=False)
 
 # ---- 9. re-read every file and verify -----------------------------------------
@@ -283,4 +289,5 @@ for r, w in seen.items():
 assert set(seen) == set(new_main) | set(new_plac) | set(C_ids) | set(D_ids)
 say("[9] files verified:")
 for p, ids, blk in files: say(f"    {os.path.relpath(p, OUT)}  {len(ids)}")
+assert_outside_cm(os.path.join(OUT, "_admin", "build_log.txt"))
 open(os.path.join(OUT, "_admin", "build_log.txt"), "w").write("\n".join(log) + "\n")

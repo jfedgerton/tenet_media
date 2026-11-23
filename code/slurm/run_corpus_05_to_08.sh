@@ -13,8 +13,9 @@ echo "NFILES=$NFILES  array=0-$LAST"
 for W in 1 3 5; do
   case $W in 1) WD=one_sentence;; 3) WD=three_sentence;; 5) WD=five_sentence;; esac
   OUT=$C/data/windows/$WD
-  case "$OUT" in "$C"/data/windows/*_sentence) ;; *) echo "refusing to delete shards outside $C/data/windows: $OUT"; exit 1;; esac
-  rm -rf "$OUT/corpus_shards"; mkdir -p "$OUT/corpus_shards"
+  RW=$(realpath -m "$C/data/windows"); RS=$(realpath -m "$OUT/corpus_shards")   # resolve symlinks before checking
+  case "$RS" in "$RW"/*_sentence/corpus_shards) ;; *) echo "refusing to delete $RS (not under $RW)"; exit 1;; esac
+  rm -rf "$RS"; mkdir -p "$RS"
   JB=$(WINDOW=$W sbatch --parsable --account=$ACC --array=0-$LAST $CODE/slurm/05_build_sentence_docs.sbatch)
   JM=$(WINDOW=$W sbatch --parsable --account=$ACC --dependency=afterok:$JB $CODE/slurm/06_merge_windows.sbatch)
   JT=$(CORPUS=$OUT/corpus.parquet OUTPUT_DIR=$OUT sbatch --parsable --dependency=afterok:$JM $CODE/slurm/07_topic_model.sbatch)
