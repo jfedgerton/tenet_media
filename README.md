@@ -74,7 +74,7 @@ exists; **re-run** = built and run on the earlier labels, must re-run once step 
 | 21 | `21_gate_infer.py` | Gate over full one-sentence corpus | planned |
 | 22 | `22_stance_train.py` | Train 4-class stance × 2 targets (twitter-roberta, seed 123) | planned |
 | 23 | `23_stance_infer.py` | Stance over gate-passing sentences | planned |
-| 24 | `24_merge_predictions.py` | Writes `data/windows/one_sentence/corpus_with_topics.parquet` (read by 25, 27, 28, 36, 41, 46) and the sentence-level label file for 25/36/46; output contract in the script header | planned |
+| 24 | `24_merge_predictions.py` | Writes `data/windows/one_sentence/corpus_with_topics.parquet` (read by 25, 27, 28, 36, 41, 46) and the sentence-level label file for 25/36/46, keyed by a unique `uid`. Also repoints 27/28/41 to the windowed topic model and 46 to `uid`. Contract in the script header | planned |
 | **5_analysis** | | | |
 | 25 | `25_build_panels.py` | Show × month stance/volume panels + audience | re-run |
 | 26 | `26_main_h1h3.R` | Main H1/H2/H3 (FE, matched FE, TWFE, SCM) | re-run |
