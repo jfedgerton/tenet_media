@@ -74,25 +74,54 @@ pred_did <- function(d, y){                                  # H2/H3/H4: post-pa
              hi = c(muC, muC + ct["Estimate"] + 1.96*ct["Std. Error"]), p = ct["Pr(>|t|)"]) }
 
 ###############################################################################
-## FIGURE 1 (MAIN): predicted headline outcome, Tenet vs non-Tenet, per hypothesis
+## FIGURE 1 (MAIN): H1 levels, full data (both groups) + H2-H4 event-study TWFE DiD
 ###############################################################################
-F1 <- rbind(
-  cbind(panel = "H1: Combined positive rate\n(pre-payment selection)", pred_lvl(P[month < TREAT & n_ment_r >= MINMENT & n_ment_u >= MINMENT], "c_pos")),
-  cbind(panel = "H2: Combined positive rate\n(post-payment DiD)",      pred_did(P[n_ment_r >= MINMENT & n_ment_u >= MINMENT], "c_pos")),
-  cbind(panel = "H3: Combined topic proportion\n(post-payment DiD)",   pred_did(P, "prop_comb")),
-  cbind(panel = "H4: JS divergence\n(post-payment DiD)",               pred_did(H, "jsd")))
-F1[, panel := factor(panel, levels = unique(panel))]
-fwrite(F1, file.path(SC, "fig1_predicted_data.csv"))
-p1 <- ggplot(F1, aes(group, pred, colour = group)) +
-  geom_hline(yintercept = 0, linewidth = 0.3, colour = "grey70") +
-  geom_point(size = 3) + geom_errorbar(aes(ymin = lo, ymax = hi), width = 0.16, linewidth = 0.7) +
-  facet_wrap(~ panel, scales = "free_y", nrow = 2) +
+library(patchwork)
+lvl_h1 <- function(d, y){
+  d <- d[is.finite(get(y)) & is.finite(log_words) & is.finite(log_aud_m)]
+  m <- feols(as.formula(paste0(y, " ~ tenet + log_words + log_aud_m | mfac")), d, cluster = ~ unit)
+  muC <- mean(d[tenet == 0][[y]], na.rm = TRUE); ct <- coeftable(m)["tenet", ]
+  data.table(group = c("Non-Tenet", "Tenet"),
+             est = c(muC, muC + ct[["Estimate"]]),
+             lo = c(muC, muC + ct[["Estimate"]] - 1.96*ct[["Std. Error"]]),
+             hi = c(muC, muC + ct[["Estimate"]] + 1.96*ct[["Std. Error"]])) }
+es_did <- function(d, y){
+  d <- d[is.finite(get(y)) & is.finite(log_aud_m)]
+  d[, rel := 12L*(as.integer(format(month, "%Y")) - 2023L) + as.integer(format(month, "%m")) - 10L]
+  d <- d[rel >= -12 & rel <= 10]
+  m <- feols(as.formula(paste0(y, " ~ i(rel, tenet, ref = -1) + post:log_aud_m | unit + month")), d, cluster = ~ unit)
+  ct <- data.table(term = rownames(coeftable(m)), as.data.table(coeftable(m)))
+  ct <- ct[grepl("^rel::", term)]
+  ct[, rel := as.integer(sub("^rel::(-?[0-9]+).*", "\\1", term))]
+  out <- ct[, .(rel, est = Estimate, lo = Estimate - 1.96*`Std. Error`, hi = Estimate + 1.96*`Std. Error`)]
+  rbind(out, data.table(rel = -1L, est = 0, lo = 0, hi = 0))[order(rel)] }
+es_plot <- function(E, ttl){
+  ggplot(E, aes(rel, est)) +
+    geom_hline(yintercept = 0, linetype = "dashed", linewidth = 0.35, colour = "grey55") +
+    geom_vline(xintercept = -0.5, linetype = "dotted", linewidth = 0.45, colour = "grey40") +
+    geom_errorbar(aes(ymin = lo, ymax = hi), width = 0.3, linewidth = 0.5, colour = ACCENT) +
+    geom_point(size = 1.6, colour = ACCENT) +
+    labs(x = "Months since payments began", y = "Estimate", title = ttl) +
+    theme_pub + theme(plot.title = element_text(size = 10)) }
+h1dat <- lvl_h1(P[month < TREAT], "c_pos")
+p_h1 <- ggplot(h1dat, aes(group, est, colour = group)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = lo, ymax = hi), width = 0.12, linewidth = 0.7) +
   scale_colour_manual(values = c("Non-Tenet" = "grey45", "Tenet" = ACCENT), guide = "none") +
-  labs(x = NULL, y = "Predicted outcome", colour = NULL,
-       title = "Predicted outcome for a Tenet vs. non-Tenet show, by hypothesis",
-       subtitle = "Controls held at observed values. Bars = 95% CI on the Tenet gap (H1 level; H2-H4 treated x post).") +
-  theme_pub
-ggsave(file.path(SC, "fig1_predicted.pdf"), p1, width = 8, height = 7)
+  labs(x = NULL, y = "Predicted outcome", title = "H1: Combined positive rate (pre-payment)") +
+  theme_pub + theme(plot.title = element_text(size = 10))
+E2 <- es_did(P, "c_pos")
+E3 <- es_did(P, "prop_comb")
+E4 <- es_did(H, "jsd")
+fwrite(rbind(cbind(panel = "H1", group = h1dat$group, h1dat[, .(rel = NA_integer_, est, lo, hi)]),
+             cbind(panel = "H2", group = NA_character_, E2),
+             cbind(panel = "H3", group = NA_character_, E3),
+             cbind(panel = "H4", group = NA_character_, E4)), file.path(SC, "fig1_predicted_data.csv"))
+p1 <- (p_h1 | es_plot(E2, "H2: Combined positive rate (event-study DiD)")) /
+      (es_plot(E3, "H3: Combined topic proportion (event-study DiD)") | es_plot(E4, "H4: JS divergence (event-study DiD)")) +
+  plot_annotation(title = "Effects of Tenet funding, by hypothesis",
+    subtitle = "H1: predicted pre-payment levels on the full panel, SEs clustered by show; bar = 95% CI on the Tenet gap. H2-H4: monthly TWFE DiD leads/lags on the full panel, ref = month before payments; bars = 95% CI.")
+ggsave(file.path(SC, "fig1_predicted.pdf"), p1, width = 10, height = 7.5)
 
 ###############################################################################
 ## FIGURE A (APPENDIX): forest of all outcomes, faceted by hypothesis
