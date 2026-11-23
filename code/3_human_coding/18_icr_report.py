@@ -17,7 +17,8 @@
 #     positive/neutral/negative for that coder, "unmentioned" if both targets are unmentioned;
 #     sentences either coder marked uncodable are left out of the gate.
 # Breakdowns: target (russia, ukraine, all placebo, each placebo entity), stratum x target,
-# coder pair x target, and the gate overall / by stratum / by pair.
+# coder pair x target, and the gate overall / by stratum / by pair. Supplementary: extra student-student pairs
+# from old partial files (step 17, supplementary_pairs.csv), alone and combined with the design's student pairs.
 #
 # Usage: python3 18_icr_report.py <podcast_analysis_root>
 # Writes coder_review/icr/{icr_report.csv, icr_summary.md}
@@ -98,6 +99,26 @@ for pair in sorted(C.pair.unique()):
     for fam in ["russia", "ukraine", "placebo"]:
         sub = C[(C.pair == pair) & (C.family == fam)]
         if len(sub): add("pair", pair, fam, sub)
+
+# ---- 2b. extra student-student pairs from old partial files (supplementary; not in the design) ----
+SP = os.path.join(ROOT, "coder_review", "adjudication", "supplementary_pairs.csv")
+if os.path.exists(SP):
+    S = pd.read_csv(SP)
+    if len(S):
+        assert S.code_x.isin(CODES).all() and S.code_y.isin(CODES).all(), "unexpected code values in supplementary pairs"
+        assert not (S.coder_x == "Jared").any() and not (S.coder_y == "Jared").any()
+        S["family"] = np.where(S.block == "placebo", "placebo", S.target)
+        for fam in ["russia", "ukraine"]:
+            sub = S[S.family == fam]
+            if len(sub):
+                rows.append(dict(scope="supplementary_student_pairs", group="extra (old partial files)", target=fam,
+                                 **stats(sub.code_x, sub.code_y, CODES, rng)))
+            design_ss = C[(C.family == fam) & ~C.pair.str.contains("Jared")]
+            both = pd.DataFrame({"a": list(design_ss.code_1) + list(sub.code_x), "b": list(design_ss.code_2) + list(sub.code_y)})
+            if len(both):
+                rows.append(dict(scope="student_student_combined", group="design + extra", target=fam,
+                                 **stats(both.a, both.b, CODES, rng)))
+        say(f"[2b] supplementary student-student pairs: {len(S)}")
 
 # ---- 3. gate (mentioned vs unmentioned) per main sentence ---------------------------------
 mm = C[C.block == "main"].pivot_table(index=["row_id", "grp", "pair"], columns="target",

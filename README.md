@@ -66,6 +66,7 @@ exists; **re-run** = built and run on the earlier labels, must re-run once step 
 | 14 | `14_assign_placebo.py` | Placebo assignment (Oct 9) | done; superseded by 15 |
 | 15 | `15_rebuild_reduced_design.py` | Reduced 8,000-sentence design; every sentence = Jared + 1 student. Test: `tests/test_15_rebuild_reduced_design.py` | done (Nov 23); audited Nov 23 |
 | 16 | `16_release_reduced_design.py` | One-time release of 15's files to coder Dropbox folders | done (Nov 30 schedule) |
+| — | `admin/carryover_old_partial.py` | One-time admin step after 16: copies a student's codes from an old week_02 coded offline into their new files (rows still assigned to them), flags v2.6 rechecks; refuses if the student has started. Test: `tests/test_carryover_extra_pairs.py` | ready Nov 23; awaiting Josh's file |
 | 17 | `17_build_adjudication.py` | Raw codes from every file; auto-accepts agreements; blind A/B adjudication sheet with rule dropdown; Jon's 200-row audit sample when complete. Test: `tests/test_17_18_adjudication_icr.py` | built Nov 23; GPT audit pending |
 | 18 | `18_icr_report.py` | Nominal Krippendorff's α from raw codes (bootstrap 95% CI), by target, stratum and pair; per-class agreement; gate α | built Nov 23; GPT audit pending |
 | 19 | `19_lock_gold.py` | Freeze adjudicated gold set + confusion matrices | planned |

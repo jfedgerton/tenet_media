@@ -18,12 +18,16 @@
 #   - Decisions already entered in the sheet are kept on re-run. If a coder later edits a raw
 #     code behind an adjudicated row, the decision is cleared (kept in previous_final_code), the row
 #     turns red (changed_since_adjudicated = 1) and is pending again. A decision needs a cited rule.
+#   - Optional: coder_materials/<student>/week_02_OLD_partial.xlsx (an old week_02 coded on the student's
+#     computer). Rows still assigned to that student were carried into the new files by
+#     admin/carryover_old_partial.py and are skipped; rows now assigned to another student + Jared become
+#     extra student-student pairs (supplementary_pairs.csv) for step 18 only, never final labels.
 #   - Jon Green's audit sample (200 adjudicated rows, spread across Russia / Ukraine / placebo in
 #     proportion) is drawn once, only when nothing is pending, and is never redrawn.
 #
 # Usage: python3 17_build_adjudication.py <podcast_analysis_root>
 # Reads  coder_materials/<student>/... , coder_review/Jared/... , coder_review/_admin/assignment_master_v2.csv
-# Writes coder_review/adjudication/{adjudication_sheet.xlsx, adjudicated_final.csv, codes_raw_long.csv,
+# Writes coder_review/adjudication/{adjudication_sheet.xlsx, adjudicated_final.csv, codes_raw_long.csv, supplementary_pairs.csv,
 #        problems.csv, jon_audit_sample.xlsx (when complete), build_log.txt}
 #        coder_review/_admin/adjudication_key.csv
 # Never writes inside coder_materials.
@@ -147,6 +151,50 @@ filled = R[R.code.notna()].drop_duplicates(["coder", "row_id", "target"], keep="
 assert_outside_cm(OUT); os.makedirs(OUT, exist_ok=True)
 R.drop(columns="prio").to_csv(os.path.join(OUT, "codes_raw_long.csv"), index=False)
 code_of = {(c, r, t): v for c, r, t, v in zip(filled.coder, filled.row_id, filled.target, filled.code)}
+
+# ---- 2b. extra codes from old partial files (optional; never part of the design) ----------
+# A student's old week_02 coded on their own computer (see admin/carryover_old_partial.py). Rows still
+# assigned to that student were carried into the new files and are read there, so they are skipped here.
+# Rows now assigned to another student + Jared become EXTRA student-student pairs for step 18 only.
+extra, n_skip_carried, n_out = [], 0, 0
+for s in ["Emily", "Josh", "Pam"]:
+    rel = f"coder_materials/{s}/week_02_OLD_partial.xlsx"
+    p = os.path.join(ROOT, rel)
+    if not os.path.exists(p): continue
+    xl = pd.ExcelFile(p)
+    d = pd.read_excel(p, sheet_name="main" if "main" in xl.sheet_names else xl.sheet_names[0])
+    assert d.row_id.is_unique, f"duplicate row_id inside {rel}"
+    for t in d.itertuples(index=False):
+        r = t.row_id
+        if r not in MI.index: n_out += 1; continue
+        unc = is_one(getattr(t, "uncodable"))
+        for tgt, col in (("russia", "stance_russia"), ("ukraine", "stance_ukraine")):
+            v = norm(getattr(t, col))
+            code = "uncodable" if unc else (v if v in STANCES else None)
+            if v is not None and v not in STANCES and not unc:
+                problems.append(dict(kind="invalid_code_extra", coder=s, file=rel, row_id=r, target=tgt, value=v))
+            if code is None: continue
+            if s in (MI.at[r, "coder1"], MI.at[r, "coder2"]):
+                n_skip_carried += 1
+                cur = code_of.get((s, r, tgt))
+                if cur is not None and cur != code:
+                    problems.append(dict(kind="carried_code_changed_in_new_file", coder=s, file=rel, row_id=r, target=tgt,
+                                         value=f"old {code} -> new {cur}"))
+                continue
+            extra.append(dict(coder_x=s, row_id=r, target=tgt, code_x=code))
+X = pd.DataFrame(extra, columns=["coder_x", "row_id", "target", "code_x"])
+sup = []
+for s, r, tgt, cx in zip(X.coder_x, X.row_id, X.target, X.code_x):
+    for c in (MI.at[r, "coder1"], MI.at[r, "coder2"]):
+        if c in ("Jared", s): continue
+        cy = code_of.get((c, r, tgt))
+        if cy is not None:
+            sup.append(dict(row_id=r, block=MI.at[r, "block"], grp=MI.at[r, "grp"], target=tgt,
+                            coder_x=s, coder_y=c, code_x=cx, code_y=cy))
+SUP = pd.DataFrame(sup, columns=["row_id", "block", "grp", "target", "coder_x", "coder_y", "code_x", "code_y"])
+SUP.to_csv(os.path.join(OUT, "supplementary_pairs.csv"), index=False)
+say(f"[2b] extra codes from old partial files: {len(X)} (skipped {n_skip_carried} carried, {n_out} rows outside the sample); "
+    f"{len(SUP)} complete extra student-student pairs so far")
 
 # ---- 3. compare per (row_id, target) ------------------------------------------
 units = []
