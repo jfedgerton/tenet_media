@@ -1,9 +1,12 @@
 import argparse, logging
 from pathlib import Path
+import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("identify")
+
 RUSSIA_PAT = "russia|russian|ukrain|putin|kyiv|kiev|donbas|crimea|zelensky|moscow|kremlin|soviet"
 PLACEBO_PAT = {
     "immigration": "immigr|border|migrant|asylum",
@@ -15,11 +18,13 @@ PLACEBO_PAT = {
     "china": "china|chinese|ccp|beijing",
     "syria": "syria|assad|damascus|aleppo",
 }
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--window-dir", required=True)
     a = ap.parse_args()
     WD = Path(a.window_dir)
+
     ti = pd.read_csv(WD / "topic_info.csv")
     namecol = next(c for c in ["Name", "Representation", "CustomName"] if c in ti.columns)
     ti = ti[ti["Topic"] >= 0].copy()
@@ -32,25 +37,44 @@ def main():
         rows += [(t, label) for t in hits]
         log.info("placebo %-14s: %s", label, sorted(hits))
     pd.DataFrame(rows, columns=["topic", "label"]).to_csv(WD / "topic_labels.csv", index=False)
+
     topics = pd.read_parquet(WD / "topics.parquet")
+    Nt = len(topics)
     topic_idx = set(topics.loc[topics.topic.isin(russia_topics), "corpus_index"])
-    log.info("russia-topic docs: %d", len(topic_idx))
+    log.info("russia-topic docs: %d ; topics N: %d", len(topic_idx), Nt)
+
+    # topics.parquet corpus_index is numbered over the FILTERED corpus that 06_topic_model
+    # kept (stripped length 0 -> "[empty]", or >= 5). Reproduce that exact filter so
+    # corpus_index lines up with the sentence it was actually computed for.
     pf = pq.ParquetFile(WD / "corpus.parquet")
-    chunks, pos = [], 0
-    for i, b in enumerate(pf.iter_batches(batch_size=500000)):
+    chunks, fpos, total = [], 0, 0
+    for b in pf.iter_batches(batch_size=500000):
         df = b.to_pandas().reset_index(drop=True)
-        df["corpus_index"] = range(pos, pos + len(df))
-        pos += len(df)
-        in_kw = df.sentence.astype(str).str.contains(RUSSIA_PAT, case=False, regex=True, na=False)
-        in_topic = df.corpus_index.isin(topic_idx)
+        n = len(df); total += n
+        sl = df["sentence"].fillna("").astype(str).str.strip().str.len().values
+        valid = (sl == 0) | (sl >= 5)
+        nkeep = int(valid.sum())
+        ci = np.full(n, -1, dtype=np.int64)
+        ci[valid] = np.arange(fpos, fpos + nkeep)
+        fpos += nkeep
+        df["corpus_index"] = ci
+        in_kw = df["sentence"].astype(str).str.contains(RUSSIA_PAT, case=False, regex=True, na=False)
+        in_topic = df["corpus_index"].isin(topic_idx)
         keep = in_kw | in_topic
         if keep.any():
             sub = df.loc[keep].copy()
             sub["from_topic"] = in_topic[keep].values
             sub["from_keyword"] = in_kw[keep].values
             chunks.append(sub)
+    assert fpos == Nt, f"ALIGN FAIL: kept {fpos} != topics {Nt}"
+    log.info("scanned=%d kept=%d topicsN=%d ALIGN_MATCH=%s", total, fpos, Nt, fpos == Nt)
+
     res = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
     res.to_parquet(WD / "russia_corpus.parquet", index=False)
-    log.info("RUSSIA CLASS: %d docs", len(res))
+    log.info("RUSSIA CLASS: %d docs (from_topic=%d from_keyword=%d)",
+             len(res), int(res["from_topic"].sum()) if len(res) else 0,
+             int(res["from_keyword"].sum()) if len(res) else 0)
+
 if __name__ == "__main__":
     main()
+
