@@ -44,7 +44,7 @@ Every script moved from the old flat layout. History is preserved (git mv).
 | `code/12_build_panels.py` | `code/5_analysis/25_build_panels.py` |
 | `code/12w_assign_placebo.py` | `code/3_human_coding/14_assign_placebo.py` |
 | `code/13_main_h1h3.R` | `code/5_analysis/26_main_h1h3.R` |
-| `code/13w_GPT_AUDIT_PROMPT.md` | `docs/audit_prompt_15_rebuild_reduced_design.md` |
+| `code/13w_GPT_AUDIT_PROMPT.md` | `docs/audit_A_rebuild_reduced_design.md` |
 | `code/13w_rebuild_reduced_design.py` | `code/3_human_coding/15_rebuild_reduced_design.py` |
 | `code/13w_release.py` | `code/3_human_coding/16_release_reduced_design.py` |
 | `code/13w_test_synthetic.py` | `tests/test_15_rebuild_reduced_design.py` |
